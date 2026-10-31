@@ -100,7 +100,7 @@
 },
 {
 "code": "1110",
-"name": "Cuentas corrientes",
+"name": "Bancos",
 "category": null,
 "nature_class": null,
 "relation": null,
@@ -112,6 +112,17 @@
 {
 "code": "111005",
 "name": "Moneda nacional",
+"category": null,
+"nature_class": null,
+"relation": null,
+"due_type": null,
+"fiscal_difference": false,
+"active": true,
+"transactional": false
+},
+{
+"code": "111010",
+"name": "Moneda extranjera",
 "category": null,
 "nature_class": null,
 "relation": null,
@@ -155,7 +166,7 @@
 },
 {
 "code": "112005",
-"name": "Moneda nacional",
+"name": "Bancos",
 "category": null,
 "nature_class": null,
 "relation": null,
