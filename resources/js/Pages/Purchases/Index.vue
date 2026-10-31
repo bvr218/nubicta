@@ -81,17 +81,18 @@ const TIPOS = { FC: 'Compra/Gasto', DS: 'Documento soporte', RP: 'Pagos' };
             <table class="s-table">
                 <thead>
                     <tr>
-                        <th>Tipo de transacción</th>
+                        <th>Tipo</th>
                         <th>Comprobante</th>
                         <th>Factura proveedor</th>
-                        <th>Fecha elaboración</th>
+                        <th>Fecha</th>
                         <th>Identificación</th>
                         <th>Sucursal</th>
                         <th>Proveedor</th>
-                        <th>Estado envío de correo</th>
-                        <th class="text-right">Valor</th>
+                        <th>Estado</th>
                         <th>Moneda</th>
-                        <th>Envío a la Dian</th>
+                        <th class="text-right">Valor</th>
+                        <th class="text-right">Saldo</th>
+                        <th>DIAN</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -104,8 +105,9 @@ const TIPOS = { FC: 'Compra/Gasto', DS: 'Documento soporte', RP: 'Pagos' };
                         <td>{{ d.branch }}</td>
                         <td class="max-w-[200px]"><Link :href="`/terceros/${d.contact_id}`" class="block truncate text-primary">{{ d.supplier }}</Link></td>
                         <td>-</td>
-                        <td class="whitespace-nowrap text-right">{{ money(d.total) }}</td>
                         <td>{{ d.currency }}</td>
+                        <td class="whitespace-nowrap text-right">{{ money(d.total) }}</td>
+                        <td class="whitespace-nowrap text-right">{{ d.balance === null ? '-' : money(d.balance) }}</td>
                         <td>{{ { Accepted: 'Aceptado', Rejected: 'Rechazado' }[d.dian_status] ?? d.dian_status ?? '-' }}</td>
                     </tr>
                 </tbody>

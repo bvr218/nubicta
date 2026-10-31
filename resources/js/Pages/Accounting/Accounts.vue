@@ -1,9 +1,10 @@
 <script setup>
-import { ref } from 'vue';
+import { nextTick, ref } from 'vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import PageHeader from '../../Components/PageHeader.vue';
 import Field from '../../Components/Field.vue';
 import AccountNode from '../../Components/Accounting/AccountNode.vue';
+import { confirmDialog } from '../../composables/dialog';
 
 const props = defineProps({
     roots: { type: Array, required: true },
@@ -20,8 +21,12 @@ const mode = ref(null); // edit | child
 const form = ref({});
 const errors = ref({});
 const saving = ref(false);
+const deleting = ref(false);
+const deleteError = ref('');
+const treeError = ref('');
 const expanded = ref(false);
 const tree = ref(null);
+const treeKey = ref(0);
 const tutorials = ref(false);
 
 async function toggleAll() {
@@ -46,9 +51,37 @@ function search() {
     }, 300);
 }
 
+function refreshTree(focusId) {
+    clearTimeout(t);
+    t = null;
+    treeError.value = '';
+    tree.value = null;
+    results.value = null;
+    searchCode.value = '';
+    searchName.value = '';
+    router.reload({
+        only: ['roots'],
+        preserveScroll: true,
+        onSuccess: async () => {
+            const res = await fetch('/contabilidad/cuentas/arbol', { headers: { Accept: 'application/json' } });
+            if (!res.ok) {
+                treeError.value = 'No fue posible actualizar el árbol de cuentas.';
+                return;
+            }
+            tree.value = await res.json();
+            expanded.value = true;
+            treeKey.value++;
+            await nextTick();
+            const targetId = focusId ?? props.roots[0]?.id;
+            if (targetId) document.querySelector(`[data-account-id="${targetId}"]`)?.scrollIntoView({ block: 'center' });
+        },
+    });
+}
+
 async function select(node) {
     const res = await fetch(`/contabilidad/cuentas/${node.id}`, { headers: { Accept: 'application/json' } });
     selected.value = await res.json();
+    deleteError.value = '';
     edit();
 }
 
@@ -57,6 +90,7 @@ function edit() {
     mode.value = 'edit';
     errors.value = {};
     form.value = {
+        code: a.code,
         name: a.name, category: a.category, due_type: a.due_type, fiscal_difference: a.fiscal_difference,
         transactional: a.transactional, requires_third_party: a.requires_third_party,
         requires_cost_center: a.requires_cost_center, active: a.active,
@@ -75,14 +109,38 @@ function newChild() {
 
 function save() {
     saving.value = true;
+    const creating = mode.value === 'child';
+    const selectedId = selected.value.id;
     const opts = {
         preserveScroll: true,
         onError: (e) => (errors.value = e),
-        onSuccess: () => select(selected.value),
+        onSuccess: () => {
+            const focusId = creating ? page.props.flash?.account_tree_focus_id : selectedId;
+            refreshTree(focusId);
+            select({ id: selectedId });
+        },
         onFinish: () => (saving.value = false),
     };
     if (mode.value === 'child') router.post('/contabilidad/cuentas', form.value, opts);
     else router.put(`/contabilidad/cuentas/${selected.value.id}`, form.value, opts);
+}
+
+async function removeAccount() {
+    if (!selected.value?.can_delete || deleting.value) return;
+    if (!await confirmDialog(`¿Borrar la cuenta ${selected.value.code} - ${selected.value.name}? Esta acción no se puede deshacer.`)) return;
+
+    deleting.value = true;
+    const focusId = selected.value.parent_id;
+    router.delete(`/contabilidad/cuentas/${selected.value.id}`, {
+        preserveScroll: true,
+        onError: (e) => (deleteError.value = e.account ?? 'No se pudo borrar la cuenta.'),
+        onSuccess: () => {
+            selected.value = null;
+            mode.value = null;
+            refreshTree(focusId);
+        },
+        onFinish: () => (deleting.value = false),
+    });
 }
 
 const can = (perm) => {
@@ -127,14 +185,15 @@ const download = (base, f) => (window.location.href = base + (base.includes('?')
                     </div>
                 </div>
                 <div class="max-h-[640px] overflow-auto">
+                    <p v-if="treeError" class="p-3 text-[12px] text-danger">{{ treeError }}</p>
                     <template v-if="results">
-                        <AccountNode v-for="n in results" :key="`s${n.id}`" :node="{ ...n, has_children: false }" :selected-id="selected?.id" @select="select" />
+                        <AccountNode v-for="n in results" :key="`${treeKey}-s${n.id}`" :node="{ ...n, has_children: false }" :selected-id="selected?.id" @select="select" />
                         <p v-if="!results.length" class="p-4 text-muted">Sin resultados</p>
                     </template>
                     <template v-else-if="expanded && tree">
-                        <AccountNode v-for="n in tree" :key="`t${n.id}`" :node="n" :selected-id="selected?.id" expand-all @select="select" />
+                        <AccountNode v-for="n in tree" :key="`${treeKey}-t${n.id}`" :node="n" :selected-id="selected?.id" expand-all @select="select" />
                     </template>
-                    <AccountNode v-for="n in roots" v-else :key="n.id" :node="n" :selected-id="selected?.id" @select="select" />
+                    <AccountNode v-for="n in roots" v-else :key="`${treeKey}-${n.id}`" :node="n" :selected-id="selected?.id" @select="select" />
                 </div>
             </div>
 
@@ -157,8 +216,9 @@ const download = (base, f) => (window.location.href = base + (base.includes('?')
                     </div>
 
                     <div class="grid grid-cols-2 gap-4">
-                        <Field v-if="mode === 'child'" label="Código" required :error="errors.code">
-                            <input v-model="form.code" class="s-input" inputmode="numeric" />
+                        <Field v-if="mode === 'child' || mode === 'edit'" label="Código" :required="mode === 'child' || selected.can_change_code" :error="errors.code">
+                            <input v-model="form.code" class="s-input" inputmode="numeric" :disabled="mode === 'edit' && !selected.can_change_code" />
+                            <p v-if="mode === 'edit' && !selected.can_change_code" class="mt-1 text-[11px] text-muted">{{ selected.code_change_reason }}</p>
                         </Field>
                         <Field label="Nombre" required :error="errors.name" :class="{ 'col-span-2': mode !== 'child' }">
                             <input v-model="form.name" class="s-input" />
@@ -184,8 +244,12 @@ const download = (base, f) => (window.location.href = base + (base.includes('?')
                     </div>
                     <p v-if="selected.relation && mode === 'edit'" class="mt-4 text-[12px] text-muted">Relación con: {{ selected.relation }}</p>
 
-                    <div v-if="can(mode === 'child' ? 'contabilidad.crear' : 'contabilidad.editar')" class="mt-6 flex justify-end">
-                        <button type="button" class="s-btn s-btn-primary w-[120px]" :disabled="saving" @click="save">Guardar</button>
+                    <p v-if="deleteError" class="mt-4 text-[12px] text-danger">{{ deleteError }}</p>
+                    <div v-if="can(mode === 'child' ? 'contabilidad.crear' : 'contabilidad.editar')" class="mt-6 flex justify-between">
+                        <button v-if="mode === 'edit'" type="button" class="s-btn s-btn-outline text-danger" :disabled="deleting || !selected.can_delete" :title="selected.code_change_reason" @click="removeAccount">
+                            <Icon icon="trash" /> Borrar cuenta
+                        </button>
+                        <button type="button" class="s-btn s-btn-primary w-[120px]" :disabled="saving || deleting" @click="save">Guardar</button>
                     </div>
                 </template>
             </div>

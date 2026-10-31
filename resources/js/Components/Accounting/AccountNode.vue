@@ -37,6 +37,7 @@ defineExpose({ toggle });
 <template>
     <div>
         <div
+            :data-account-id="node.id"
             class="grid cursor-pointer grid-cols-[136px_1fr] border-b border-[#f1f3f5] hover:bg-[#f8fbff]"
             :class="{ 'bg-primary-light': selectedId === node.id }"
             @click="emit('select', node)"

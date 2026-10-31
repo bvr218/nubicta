@@ -20,7 +20,10 @@ const props = defineProps({
 });
 
 const thisYear = new Date().getFullYear();
-const f = reactive({ q: '', desde: '', hasta: '', sub: props.view.subtabs?.[0] ?? '', anio: String(thisYear), usuario: '', rango: 'Rango', ...Object.fromEntries((props.view.selects ?? []).map((s) => [s.name, ''])), ...props.filters });
+const f = reactive({ q: '', desde: '', hasta: '', sub: props.view.subtabs?.[0] ?? '', anio: String(thisYear), usuario: '', rango: 'Rango', ...Object.fromEntries((props.view.selects ?? []).map((s) => [s.name, s.multiple ? [] : ''])), ...props.filters });
+for (const s of props.view.selects ?? []) {
+    if (s.multiple && !Array.isArray(f[s.name])) f[s.name] = f[s.name] ? [f[s.name]] : [];
+}
 const paginator = computed(() => (Array.isArray(props.rows) ? null : props.rows));
 const list = computed(() => (Array.isArray(props.rows) ? props.rows : props.rows.data));
 const columns = computed(() => props.view.subtab_columns?.[f.sub] ?? props.view.columns);
@@ -42,12 +45,33 @@ const toggleAll = () => (selected.value = allSelected.value ? [] : [...selectabl
 const busy = ref(false);
 const menuOpen = ref(null);
 const closeMenu = () => (menuOpen.value = null);
-onMounted(() => document.addEventListener('click', closeMenu));
-onBeforeUnmount(() => document.removeEventListener('click', closeMenu));
+const openMultiFilter = ref(null);
+const multiFilterRefs = new Map();
+const setMultiFilterRef = (name, el) => el ? multiFilterRefs.set(name, el) : multiFilterRefs.delete(name);
+const closeMultiFilter = () => (openMultiFilter.value = null);
+function toggleMultiFilter(name) {
+    openMultiFilter.value = openMultiFilter.value === name ? null : name;
+}
+function closeMultiFilterOnOutside(event) {
+    if (openMultiFilter.value && !multiFilterRefs.get(openMultiFilter.value)?.contains(event.target)) closeMultiFilter();
+}
+function closeMultiFilterOnEscape(event) {
+    if (event.key === 'Escape') closeMultiFilter();
+}
+onMounted(() => {
+    document.addEventListener('click', closeMenu);
+    document.addEventListener('pointerdown', closeMultiFilterOnOutside);
+    document.addEventListener('keydown', closeMultiFilterOnEscape);
+});
+onBeforeUnmount(() => {
+    document.removeEventListener('click', closeMenu);
+    document.removeEventListener('pointerdown', closeMultiFilterOnOutside);
+    document.removeEventListener('keydown', closeMultiFilterOnEscape);
+});
 
 function reload(extra = {}) {
     Object.assign(f, extra);
-    const params = Object.fromEntries(Object.entries(f).filter(([, v]) => v));
+    const params = Object.fromEntries(Object.entries(f).filter(([, v]) => Array.isArray(v) ? v.length > 0 : Boolean(v)));
     if (params.sub === props.view.subtabs?.[0]) delete params.sub;
     if (params.anio === String(thisYear)) delete params.anio;
     selected.value = [];
@@ -97,9 +121,14 @@ function goDownload(b, formato) {
     window.location.href = `${url}${url.includes('?') ? '&' : '?'}formato=${formato}`;
 }
 function downloadHref(b) {
-    const qs = new URLSearchParams(Object.fromEntries(Object.entries(f).filter(([, v]) => v))).toString();
+    const qs = new URLSearchParams();
+    for (const [key, value] of Object.entries(f)) {
+        if (Array.isArray(value)) value.forEach((v) => qs.append(`${key}[]`, v));
+        else if (value) qs.set(key, value);
+    }
+    const query = qs.toString();
     const url = fill(b.download);
-    return qs ? `${url}${url.includes('?') ? '&' : '?'}${qs}` : url;
+    return query ? `${url}${url.includes('?') ? '&' : '?'}${query}` : url;
 }
 </script>
 
@@ -233,12 +262,34 @@ function downloadHref(b) {
                 <label class="flex w-[calc(50%-6px)] flex-col text-[12px] text-ink-soft sm:w-auto">Fecha desde<input v-model="f.desde" type="date" class="s-input sm:w-[160px]" /></label>
                 <label class="flex w-[calc(50%-6px)] flex-col text-[12px] text-ink-soft sm:w-auto">Fecha hasta<input v-model="f.hasta" type="date" class="s-input sm:w-[160px]" /></label>
             </template>
-            <label v-for="s in view.selects ?? []" :key="s.name" class="flex w-full flex-col text-[12px] text-ink-soft sm:w-auto">{{ s.label }}
-                <select v-model="f[s.name]" class="s-input sm:w-[170px]" @change="reload()">
+            <div v-for="s in view.selects ?? []" :key="s.name" class="flex w-full flex-col text-[12px] text-ink-soft sm:w-auto">
+                <span>{{ s.label }}</span>
+                <div v-if="s.multiple" :ref="(el) => setMultiFilterRef(s.name, el)" class="relative">
+                    <button type="button" class="s-input flex w-full cursor-pointer items-center justify-between gap-3 text-left sm:w-[190px]"
+                        :aria-expanded="openMultiFilter === s.name" @click.stop="toggleMultiFilter(s.name)">
+                        {{ f[s.name].length ? `${f[s.name].length} seleccionados` : 'Todos' }} <Icon icon="chevron-down" class="text-[10px]" />
+                    </button>
+                    <div v-if="openMultiFilter === s.name" class="absolute left-0 top-full z-30 mt-1 flex max-h-[60vh] w-[min(90vw,280px)] flex-col overflow-hidden rounded border border-line bg-white shadow-lg sm:w-[280px]">
+                        <div class="overflow-y-auto py-1">
+                            <label v-for="o in s.options" :key="o" class="flex min-h-[44px] cursor-pointer items-center gap-3 whitespace-nowrap px-4 py-2 text-[14px] text-ink hover:bg-[#f0f9ff]">
+                                <input v-model="f[s.name]" type="checkbox" class="h-5 w-5 shrink-0 accent-primary" :value="o" @change="reload()" />
+                                {{ o }}
+                            </label>
+                        </div>
+                        <div class="flex shrink-0 justify-between gap-3 border-t border-line bg-white p-2">
+                            <button type="button" class="min-h-[40px] px-3 text-[13px] font-semibold text-primary hover:bg-[#f0f9ff]"
+                                :disabled="!f[s.name].length" @click="f[s.name] = []; reload()">
+                                Limpiar
+                            </button>
+                            <button type="button" class="s-btn s-btn-primary min-h-[40px] px-4" @click="closeMultiFilter">Listo</button>
+                        </div>
+                    </div>
+                </div>
+                <select v-else v-model="f[s.name]" class="s-input sm:w-[170px]" @change="reload()">
                     <option value="">Todos</option>
                     <option v-for="o in s.options" :key="o" :value="o">{{ o }}</option>
                 </select>
-            </label>
+            </div>
             <span v-for="c in view.chips ?? []" :key="c.text ?? c" class="inline-flex items-center gap-2 rounded-full bg-[#e0f2fe] px-3 py-[6px] text-[12px] text-primary">{{ c.text ?? c }}
                 <Link v-if="c.clear" :href="c.clear" title="Quitar filtro"><Icon icon="circle-xmark" /></Link>
             </span>
@@ -287,7 +338,20 @@ function downloadHref(b) {
                     <tr v-for="(r, i) in list" :key="i">
                         <td v-for="(raw, j) in r" :key="j" :class="['whitespace-nowrap', cell(raw).align === 'right' && 'text-right', cell(raw).truncate && 'max-w-[220px] truncate']" :title="cell(raw).truncate ? cell(raw).text : null">
                             <input v-if="cell(raw).select" v-model="selected" type="checkbox" :value="cell(raw).select" />
-                            <span v-else-if="cell(raw).badge" class="s-badge" :class="badgeClass[cell(raw).badge]">{{ cell(raw).text }}</span>
+                            <span v-else-if="cell(raw).icon_only" class="inline-flex items-center gap-1">
+                                <Link v-if="cell(raw).href" :href="cell(raw).href" class="inline-flex items-center justify-center" :title="cell(raw).title" :aria-label="cell(raw).title">
+                                    <Icon :icon="cell(raw).icon" :class="cell(raw).icon_class" />
+                                </Link>
+                                <span v-else :title="cell(raw).title" :aria-label="cell(raw).title">
+                                    <Icon :icon="cell(raw).icon" :class="cell(raw).icon_class" />
+                                </span>
+                                <Link v-if="cell(raw).link_text && cell(raw).href" :href="cell(raw).href" class="font-semibold text-primary hover:underline" :title="cell(raw).link_title">
+                                    {{ cell(raw).link_text }}
+                                </Link>
+                            </span>
+                            <span v-else-if="cell(raw).badge" class="s-badge inline-flex items-center gap-1" :class="badgeClass[cell(raw).badge]">
+                                <Icon v-if="cell(raw).icon" :icon="cell(raw).icon" /> {{ cell(raw).text }}
+                            </span>
                             <RowMenu v-else-if="cell(raw).split" :open="menuOpen === `row${i}`" @close="menuOpen = null">
                                 <template #anchor>
                                 <a v-if="cell(raw).split.download" :href="cell(raw).split.download" class="rounded-l-[4px] border border-primary px-[34px] py-[4px] text-[12px] text-primary hover:bg-[#f0f9ff]">{{ cell(raw).split.text }}</a>

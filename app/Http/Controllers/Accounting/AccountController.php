@@ -4,10 +4,14 @@ namespace App\Http\Controllers\Accounting;
 
 use App\Exports\AccountsExport;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\DashboardController;
 use App\Models\Account;
+use App\Support\Download;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -26,7 +30,7 @@ class AccountController extends Controller
         return Inertia::render('Accounting/Accounts', [
             'roots' => Account::whereNull('parent_id')->orderBy('code')->get()->map(fn ($a) => $this->node($a)),
             'categories' => self::CATEGORIES,
-            'tabs' => \App\Http\Controllers\DashboardController::tabs('contabilidad'),
+            'tabs' => DashboardController::tabs('contabilidad'),
         ]);
     }
 
@@ -62,7 +66,16 @@ class AccountController extends Controller
 
     public function show(Account $account): JsonResponse
     {
-        return response()->json([...$account->toArray(), 'level_name' => Account::LEVEL_NAMES[$account->level], 'parent' => $account->parent?->label()]);
+        $codeChangeReason = $this->codeChangeReason($account);
+
+        return response()->json([
+            ...$account->toArray(),
+            'level_name' => Account::LEVEL_NAMES[$account->level],
+            'parent' => $account->parent?->label(),
+            'can_change_code' => $codeChangeReason === null,
+            'can_delete' => $codeChangeReason === null,
+            'code_change_reason' => $codeChangeReason,
+        ]);
     }
 
     public function store(Request $request): RedirectResponse
@@ -77,7 +90,7 @@ class AccountController extends Controller
             throw ValidationException::withMessages(['code' => 'Ya existe una cuenta con este código.']);
         }
 
-        Account::create([
+        $account = Account::create([
             ...$data,
             'level' => Account::levelForCode($data['code']),
             'nature' => Account::natureForCode($data['code']),
@@ -86,13 +99,25 @@ class AccountController extends Controller
             $parent->update(['transactional' => false]);
         }
 
-        return back()->with('success', 'Cuenta creada correctamente.');
+        return back()->with('success', 'Cuenta creada correctamente.')->with('account_tree_focus_id', $account->id);
     }
 
     public function update(Request $request, Account $account): RedirectResponse
     {
         $data = $this->validated($request, $account);
-        unset($data['code'], $data['parent_id']);
+        if (isset($data['code']) && $data['code'] !== $account->code) {
+            if ($reason = $this->codeChangeReason($account)) {
+                throw ValidationException::withMessages(['code' => $reason]);
+            }
+            if ($account->parent && (! str_starts_with($data['code'], $account->parent->code) || strlen($data['code']) <= strlen($account->parent->code))) {
+                throw ValidationException::withMessages(['code' => "El código debe iniciar con {$account->parent->code} y ser más largo."]);
+            }
+            $data['level'] = Account::levelForCode($data['code']);
+            $data['nature'] = Account::natureForCode($data['code']);
+        } else {
+            unset($data['code']);
+        }
+        unset($data['parent_id']);
         if ($account->children()->exists()) {
             $data['transactional'] = false;
         }
@@ -101,16 +126,41 @@ class AccountController extends Controller
         return back()->with('success', 'Cuenta actualizada correctamente.');
     }
 
+    public function destroy(Account $account): RedirectResponse
+    {
+        try {
+            DB::transaction(function () use ($account) {
+                $account = Account::query()->lockForUpdate()->findOrFail($account->id);
+                if ($reason = $this->codeChangeReason($account)) {
+                    throw ValidationException::withMessages(['account' => str_replace('cambiar el código', 'borrar la cuenta', $reason)]);
+                }
+                $account->delete();
+            });
+        } catch (QueryException $e) {
+            if ($e->getCode() !== '23000') {
+                throw $e;
+            }
+            throw ValidationException::withMessages(['account' => 'No se puede borrar la cuenta porque está vinculada a otra configuración.']);
+        }
+
+        return back()->with('success', 'Cuenta borrada correctamente.');
+    }
+
     public function export(): BinaryFileResponse
     {
-        return \App\Support\Download::export(new AccountsExport, 'Cuentas contables.xlsx', 'Listado de cuentas contables');
+        return Download::export(new AccountsExport, 'Cuentas contables.xlsx', 'Listado de cuentas contables');
     }
 
     private function validated(Request $request, ?Account $account = null): array
     {
+        $codeRules = ['required', 'regex:/^\d{1,12}$/'];
+        if ($account) {
+            $codeRules[] = Rule::unique('accounts', 'code')->where('company_id', $account->company_id)->ignore($account->id);
+        }
+
         return $request->validate([
             'parent_id' => [$account ? 'nullable' : 'required', 'exists:accounts,id'],
-            'code' => [$account ? 'nullable' : 'required', 'regex:/^\d{1,12}$/'],
+            'code' => $codeRules,
             'name' => ['required', 'string', 'max:255'],
             'category' => ['nullable', Rule::in(self::CATEGORIES)],
             'due_type' => ['nullable', Rule::in(['cartera', 'proveedores'])],
@@ -120,6 +170,20 @@ class AccountController extends Controller
             'requires_cost_center' => ['boolean'],
             'active' => ['boolean'],
         ], [], ['code' => 'código', 'name' => 'nombre']);
+    }
+
+    private function codeChangeReason(Account $account): ?string
+    {
+        if (DB::table('ledger_lines')->where('company_id', $account->company_id)->where(function ($q) use ($account) {
+            $q->where('account_id', $account->id)->orWhere('account_code', $account->code);
+        })->exists() || DB::table('journal_lines')->where('company_id', $account->company_id)->where('account_id', $account->id)->exists()) {
+            return 'No se puede cambiar el código porque la cuenta ya tiene movimientos contables.';
+        }
+        if ($account->children()->exists()) {
+            return 'No se puede cambiar el código porque la cuenta tiene subcuentas.';
+        }
+
+        return null;
     }
 
     private function node(Account $a): array

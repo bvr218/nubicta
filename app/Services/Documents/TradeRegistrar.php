@@ -253,7 +253,7 @@ class TradeRegistrar
             $related = SalesDocument::query()->whereIn('type', $kind === 'FV' ? ['CT', 'RM'] : ['CT'])->where('status', '!=', 'annulled')->find((int) $data['source_id']);
         }
 
-        return SalesDocument::create([
+        $doc = SalesDocument::create([
             'company_id' => CurrentCompany::id(), 'source' => 'erp', 'type' => $kind, 'document_type_id' => $type->id, 'prefix' => $type->prefix,
             'number' => $number, 'name' => $name, 'date' => $data['date'], 'due_date' => $dueDate, 'contact_id' => $contact->id,
             'contact_person_id' => $this->person($contact, $data['person_id'] ?? null),
@@ -270,6 +270,12 @@ class TradeRegistrar
             'observations' => trim(implode("\n", array_filter([$data['header_text'] ?? null, $data['observations'] ?? null, $data['footer_text'] ?? null]))) ?: null,
             'status' => 'issued', 'dian_status' => $type->isElectronic() ? 'Draft' : null, 'mail_status' => 'not_sent', 'created_by' => Auth::id(),
         ]);
+
+        if (in_array($kind, ['FV', 'RM'], true) && $related instanceof SalesDocument && $related->type === 'CT' && $related->status !== 'approved') {
+            $related->forceFill(['status' => 'approved'])->save();
+        }
+
+        return $doc;
     }
 
     private function createPurchase(string $kind, DocumentType $type, int $number, string $name, Contact $contact, array $calc, ?Model $related, array $data, float $credit, string $dueDate): PurchaseDocument
