@@ -23,7 +23,12 @@ class ModuleViewController extends Controller
                 ['label' => 'Descargar', 'href' => '/ventas/cotizaciones/excel', 'style' => 'outline', 'icon' => 'download', 'external' => true],
                 ['label' => 'Crear cotización', 'href' => '/ventas/cotizaciones/crear'],
             ],
-            'columns' => ['Comprobante', 'Fecha elaboración', 'Identificación', 'Sucursal', 'Cliente', 'Total', 'Moneda'],
+            'selects' => [
+                ['name' => 'estado', 'label' => 'Estado', 'multiple' => true, 'options' => ['Pendientes', 'Aprobada', 'Descartada', 'Sin correo', 'Correo pendiente', 'Correo enviado', 'Fallido', 'Correo bloqueado']],
+                ['name' => 'remisionada', 'label' => 'Remisionada', 'options' => ['Sí', 'No']],
+                ['name' => 'facturada', 'label' => 'Facturada', 'options' => ['Sí', 'No']],
+            ],
+            'columns' => ['Comprobante', 'Fecha elaboración', 'Identificación', 'Sucursal', 'Cliente', 'Estado', 'Remisionada', 'Facturada', 'Total', 'Moneda'],
             'empty' => ['No se encontraron resultados para tu búsqueda.', 'Modifica tus criterios de búsqueda o filtrado e inténtalo de nuevo.'], 'clear_url' => '/ventas/cotizaciones',
             'source' => 'quotes',
         ],
@@ -210,7 +215,54 @@ class ModuleViewController extends Controller
         $to = $request->input('hasta', now()->toDateString());
 
         return SalesDocument::query()->with('contact:id,name,identification,branch_office')
+            ->when($type === 'CT', fn ($q) => $q->addSelect(['remission_id' => DB::table('sales_documents as remissions')
+                ->select('remissions.id')->whereColumn('remissions.related_document_id', 'sales_documents.id')->where('remissions.type', 'RM')->orderByDesc('remissions.id')->limit(1)])
+            )
+            ->when($type === 'CT', fn ($q) => $q->addSelect(['remission_name' => DB::table('sales_documents as remissions')
+                ->select('remissions.name')->whereColumn('remissions.related_document_id', 'sales_documents.id')->where('remissions.type', 'RM')->orderByDesc('remissions.id')->limit(1)])
+            )
+            ->when($type === 'CT', fn ($q) => $q->addSelect(['invoice_id' => DB::table('sales_documents as invoices')
+                ->select('invoices.id')->whereColumn('invoices.related_document_id', 'sales_documents.id')->where('invoices.type', 'FV')->orderByDesc('invoices.id')->limit(1)])
+            )
+            ->when($type === 'CT', fn ($q) => $q->addSelect(['invoice_name' => DB::table('sales_documents as invoices')
+                ->select('invoices.name')->whereColumn('invoices.related_document_id', 'sales_documents.id')->where('invoices.type', 'FV')->orderByDesc('invoices.id')->limit(1)])
+            )
             ->where('type', $type)->when(! $all, fn ($q) => $q->whereBetween('date', [$from, $to]))
+            ->when($type === 'CT' && $request->filled('estado'), function ($q) use ($request) {
+                $statuses = array_intersect((array) $request->input('estado'), ['Pendientes', 'Aprobada', 'Descartada', 'Sin correo', 'Correo pendiente', 'Correo enviado', 'Fallido', 'Correo bloqueado']);
+                $q->where(function ($q) use ($statuses) {
+                    foreach ($statuses as $status) {
+                        $q->orWhere(function ($q) use ($status) {
+                            match ($status) {
+                                'Pendientes' => $q->where('status', 'issued'),
+                                'Aprobada' => $q->where('status', 'approved'),
+                                'Descartada' => $q->where('status', 'discarded'),
+                                'Correo pendiente' => $q->where('status', 'issued')->where('mail_status', 'queued'),
+                                'Correo enviado' => $q->where('status', 'issued')->whereIn('mail_status', ['sent', 'read']),
+                                'Fallido' => $q->where('status', 'issued')->whereIn('mail_status', ['failed', 'failed_delivery']),
+                                'Correo bloqueado' => $q->where('status', 'issued')->where('mail_status', 'blocked'),
+                                'Sin correo' => $q->where('status', 'issued')->where(function ($mail) {
+                                    $mail->whereNull('mail_status')->orWhereNotIn('mail_status', ['queued', 'sent', 'read', 'failed', 'failed_delivery', 'blocked']);
+                                }),
+                                default => $q->whereRaw('1 = 0'),
+                            };
+                        });
+                    }
+                    if ($statuses === []) {
+                        $q->whereRaw('1 = 0');
+                    }
+                });
+            })
+            ->when($type === 'CT' && $request->filled('remisionada'), function ($q) use ($request) {
+                $exists = DB::table('sales_documents as remissions')->selectRaw('1')
+                    ->whereColumn('remissions.related_document_id', 'sales_documents.id')->where('remissions.type', 'RM');
+                $request->input('remisionada') === 'Sí' ? $q->whereExists($exists) : $q->whereNotExists($exists);
+            })
+            ->when($type === 'CT' && $request->filled('facturada'), function ($q) use ($request) {
+                $exists = DB::table('sales_documents as invoices')->selectRaw('1')
+                    ->whereColumn('invoices.related_document_id', 'sales_documents.id')->where('invoices.type', 'FV');
+                $request->input('facturada') === 'Sí' ? $q->whereExists($exists) : $q->whereNotExists($exists);
+            })
             ->when($request->input('q'), fn ($q, $t) => $type === 'CT'
                 ? $q->whereIn('created_by', DB::table('users')->where('name', 'like', "%$t%")->pluck('id'))
                 : $q->whereHas('contact', fn ($c) => $c->where('name', 'like', "%$t%")->orWhere('identification', 'like', "$t%")))
@@ -219,11 +271,48 @@ class ModuleViewController extends Controller
             ->paginate(min($request->integer('per_page', $type === 'CT' ? 50 : 20), 5000))->withQueryString()
             ->through(fn (SalesDocument $d) => array_values(array_filter([
                 $type === 'RM' ? 'Remisión' : null,
-                ['text' => $d->name.($d->status === 'annulled' ? ' (Anulada)' : ''), 'href' => "/documentos/ventas/{$d->id}"],
+                ['text' => $d->name.($type === 'RM' && $d->status === 'annulled' ? ' (Anulada)' : ''), 'href' => "/documentos/ventas/{$d->id}"],
                 $d->date->format('d/m/Y'), $d->contact?->identification, $d->contact?->branch_office ?: '-', ['text' => $d->contact?->name, 'truncate' => true],
-                $type === 'RM' ? $d->mailBadge() : null,
+                $type === 'CT' ? $this->quoteStatusBadge($d) : ($type === 'RM' ? $d->mailBadge() : null),
+                $type === 'CT' ? [
+                    'text' => $d->remission_id ? 'Sí' : 'No',
+                    'icon' => $d->remission_id ? 'circle-check' : 'circle-xmark',
+                    'icon_class' => $d->remission_id ? 'text-[#2e7d32]' : 'text-[#9e9e9e]',
+                    'icon_only' => true,
+                    'title' => 'Remisionada: '.($d->remission_id ? 'Sí' : 'No'),
+                    'href' => $d->remission_id ? "/documentos/ventas/{$d->remission_id}" : null,
+                    'link_text' => $d->remission_name,
+                    'link_title' => $d->remission_name,
+                ] : null,
+                $type === 'CT' ? [
+                    'text' => $d->invoice_id ? 'Sí' : 'No',
+                    'icon' => $d->invoice_id ? 'circle-check' : 'circle-xmark',
+                    'icon_class' => $d->invoice_id ? 'text-[#2e7d32]' : 'text-[#9e9e9e]',
+                    'icon_only' => true,
+                    'title' => 'Facturada: '.($d->invoice_id ? 'Sí' : 'No'),
+                    'href' => $d->invoice_id ? "/documentos/ventas/{$d->invoice_id}" : null,
+                    'link_text' => $d->invoice_name,
+                    'link_title' => $d->invoice_name,
+                ] : null,
                 ['text' => $this->money((float) $d->total), 'align' => 'right'], $type === 'RM' ? null : ($d->currency ?? 'COP'),
             ], fn ($v) => $v !== null)));
+    }
+
+    /** Estado visible en la lista de cotizaciones. */
+    private function quoteStatusBadge(SalesDocument $doc): array
+    {
+        return match ($doc->status) {
+            'annulled' => ['text' => 'Anulada', 'badge' => 'danger'],
+            'approved' => ['text' => 'Aprobada', 'badge' => 'ok', 'icon' => 'circle-check'],
+            'discarded' => ['text' => 'Descartada', 'badge' => 'off'],
+            default => match ($doc->mail_status) {
+                'queued' => ['text' => 'Correo pendiente', 'badge' => 'off'],
+                'sent', 'read' => ['text' => 'Correo enviado', 'badge' => 'ok'],
+                'failed', 'failed_delivery' => ['text' => 'Fallido', 'badge' => 'danger'],
+                'blocked' => ['text' => 'Correo bloqueado', 'badge' => 'danger'],
+                default => ['text' => 'Sin correo', 'badge' => 'warn'],
+            },
+        };
     }
 
     private function quotes(Request $request)

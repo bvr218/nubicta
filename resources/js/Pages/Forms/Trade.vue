@@ -156,7 +156,7 @@ watch(() => totals.value.net, (net) => {
 
 watch(() => doc.date, () => doc.payments.forEach((p) => { if (methodById(p.method_id)?.credit) p.due_date = addDays(doc.date, p.range); }));
 
-watch(() => sale && f.doc === 'FV' ? doc.contact_id : null, async (contactId, _, onCleanup) => {
+watch(() => (sale && f.doc === 'FV') || (f.purchase && f.doc === 'FC') ? doc.contact_id : null, async (contactId, _, onCleanup) => {
     advanceBalance.value = null;
     advanceBalanceError.value = '';
     if (!contactId) return;
@@ -164,7 +164,8 @@ watch(() => sale && f.doc === 'FV' ? doc.contact_id : null, async (contactId, _,
     const controller = new AbortController();
     onCleanup(() => controller.abort());
     try {
-        const response = await fetch(`/api/buscar/anticipos?modulo=ventas&contact=${contactId}`, {
+        const module = sale ? 'ventas' : 'compras';
+        const response = await fetch(`/api/buscar/anticipos?modulo=${module}&contact=${contactId}`, {
             headers: { Accept: 'application/json' },
             signal: controller.signal,
         });
@@ -444,7 +445,10 @@ async function submit(action) {
                                 <a v-if="sale && doc.contact_id" :href="`/terceros/${doc.contact_id}/editar`" target="_blank" class="whitespace-nowrap text-[11px] text-[#7cb342] underline">Ver perfil</a>
                             </div>
                             <p v-if="doc.errors.contact_id" class="text-[10px] text-danger">{{ doc.errors.contact_id }}</p>
-                            <p v-if="advanceBalance !== null && advanceBalance !== 0" class="text-[11px]" :class="advanceBalance > 0 ? 'text-[#2e7d32]' : 'text-[#c62828]'">
+                            <p v-if="sale && advanceBalance !== null && advanceBalance !== 0" class="text-[11px]" :class="advanceBalance > 0 ? 'text-[#2e7d32]' : 'text-[#c62828]'">
+                                Saldo Anticipos: {{ money(advanceBalance) }}
+                            </p>
+                            <p v-else-if="f.purchase && f.doc === 'FC' && advanceBalance > 0" class="text-[11px] text-[#2e7d32]">
                                 Saldo Anticipos: {{ money(advanceBalance) }}
                             </p>
                             <p v-if="advanceBalanceError" class="text-[10px] text-danger" role="alert">{{ advanceBalanceError }}</p>

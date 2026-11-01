@@ -466,11 +466,11 @@ return [
         'fields' => [
             ['key' => 'code', 'label' => 'Código', 'type' => 'text', 'required' => true],
             ['key' => 'name', 'label' => 'Nombre', 'type' => 'text', 'required' => true],
-            ['key' => 'purchase_account_id', 'label' => 'Vr. Compra', 'type' => 'account'],
-            ['key' => 'depreciation_account_id', 'label' => 'Depreciación', 'type' => 'account'],
-            ['key' => 'expense_account_id', 'label' => 'Gasto Depreciación', 'type' => 'account'],
-            ['key' => 'fiscal_depreciation_account_id', 'label' => 'Depreciación Fiscal', 'type' => 'account'],
-            ['key' => 'fiscal_expense_account_id', 'label' => 'Gasto Depreciación Fiscal', 'type' => 'account'],
+            ['key' => 'purchase_account_id', 'label' => 'Cuenta Gasto de Adquisiciones', 'type' => 'account'],
+            ['key' => 'depreciation_account_id', 'label' => 'Cuenta Depreciación', 'type' => 'account'],
+            ['key' => 'expense_account_id', 'label' => 'Cuenta Gasto Depreciación', 'type' => 'account'],
+            ['key' => 'fiscal_depreciation_account_id', 'label' => 'Cuenta Depreciación Fiscal', 'type' => 'account'],
+            ['key' => 'fiscal_expense_account_id', 'label' => 'Cuenta Gasto Depreciación Fiscal', 'type' => 'account'],
             ['key' => 'active', 'label' => 'En uso', 'type' => 'checkbox', 'default' => true],
         ],
         'rules' => [

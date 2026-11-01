@@ -487,6 +487,7 @@ class DocumentFormController extends Controller
         $doc = match (true) {
             in_array($form['doc'] ?? '', ['FV', 'NC', 'ND', 'CT', 'RM'], true) => 'FV',
             in_array($form['page'], ['CashReceipt'], true) => 'RC',
+            in_array($form['page'], ['PaymentReceipt'], true) => 'CE',
             default => 'FC',
         };
 

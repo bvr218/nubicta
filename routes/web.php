@@ -152,6 +152,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/{account}/hijos', [AccountController::class, 'children'])->whereNumber('account');
         Route::post('/', [AccountController::class, 'store'])->middleware('can:contabilidad.crear');
         Route::put('/{account}', [AccountController::class, 'update'])->middleware('can:contabilidad.editar');
+        Route::delete('/{account}', [AccountController::class, 'destroy'])->middleware('can:contabilidad.editar');
     });
 
     Route::prefix('terceros')->middleware('can:terceros.ver')->group(function () {

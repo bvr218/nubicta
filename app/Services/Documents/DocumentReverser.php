@@ -49,6 +49,19 @@ class DocumentReverser
             return 'La DIAN ya aceptó este documento electrónico: para reversarlo elabora una nota '.($doc instanceof SalesDocument ? 'crédito' : 'de ajuste').'.';
         }
         if ($doc instanceof SalesDocument || $doc instanceof PurchaseDocument) {
+            if ($doc instanceof SalesDocument && $doc->type === 'CT') {
+                $invoice = SalesDocument::query()->where('related_document_id', $doc->id)->where('type', 'FV')->value('name');
+                $remission = SalesDocument::query()->where('related_document_id', $doc->id)->where('type', 'RM')->value('name');
+                if ($invoice && $remission) {
+                    return "No se puede editar la cotización {$doc->name} porque ya fue facturada ({$invoice}) y remisionada ({$remission}).";
+                }
+                if ($invoice) {
+                    return "No se puede editar la cotización {$doc->name} porque ya fue facturada ({$invoice}).";
+                }
+                if ($remission) {
+                    return "No se puede editar la cotización {$doc->name} porque ya fue remisionada ({$remission}).";
+                }
+            }
             $fk = $doc instanceof SalesDocument ? 'sales_document_id' : 'purchase_document_id';
             $receipt = DB::table('receipt_items')->join('receipts', 'receipts.id', '=', 'receipt_items.receipt_id')
                 ->where("receipt_items.$fk", $doc->id)->where('receipts.status', '!=', 'annulled')->value('receipts.name');
