@@ -44,7 +44,8 @@ class Download
                     break;
                 }
             }
-            [$formats, $totals] = [self::infer($rows), null];
+            $formats = method_exists($export, 'formats') ? array_values($export->formats()) : self::infer($rows);
+            $totals = null;
         }
         $columns = array_map(fn ($h, $i) => [(string) $h, $formats[$i] ?? 'text'], $headings, array_keys($headings));
 

@@ -74,7 +74,7 @@ const download = (base, f) => (window.location.href = base + (base.includes('?')
                             </label>
                         </div>
                     </div>
-                    <DownloadMenu @download="(f) => download(`/terceros/excel?tipo=${party}`, f)" />
+                    <DownloadMenu label="Descargar todos" title="Excel o PDF con teléfono, correo y el resto de datos" @download="(f) => download(`/terceros/excel?tipo=${party}`, f)" />
                     <Link href="/movimientos" class="s-btn s-btn-outline">Ver reportes <Icon icon="chevron-down" /></Link>
                     <div class="relative flex" @click.stop>
                         <Link :href="cfg.create" class="s-btn s-btn-primary rounded-r-none">{{ cfg.create_label }}</Link>

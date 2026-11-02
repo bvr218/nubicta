@@ -69,6 +69,11 @@ class Contact extends Model
         return $this->belongsTo(Municipality::class, 'municipality_code', 'code');
     }
 
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class, 'department_code', 'code');
+    }
+
     public function scopeRole(Builder $q, ?string $role): Builder
     {
         $column = self::ROLES[$role] ?? null;

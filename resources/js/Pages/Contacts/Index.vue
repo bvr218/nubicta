@@ -28,7 +28,7 @@ function search() {
 }
 
 const createLabel = computed(() => ({ cliente: 'Crear cliente', proveedor: 'Crear proveedor', empleado: 'Crear empleado' })[tipo.value] ?? 'Crear tercero');
-const exportUrl = computed(() => '/terceros/excel?' + new URLSearchParams(Object.entries({ q: q.value, tipo: tipo.value, estado: estado.value }).filter(([, v]) => v)).toString());
+const exportUrl = computed(() => '/terceros/excel?' + new URLSearchParams(Object.entries({ tipo: tipo.value }).filter(([, v]) => v)).toString());
 const roleTabs = [
     { key: '', label: 'Todos' },
     { key: 'cliente', label: 'Clientes' },
@@ -62,7 +62,7 @@ const download = (base, f) => (window.location.href = base + (base.includes('?')
                 </button>
             </div>
             <div class="ml-auto flex flex-wrap justify-end gap-2">
-                <DownloadMenu icon="file-excel" label="Exportar" @download="(f) => download(exportUrl, f)" />
+                <DownloadMenu label="Descargar todos" title="Excel o PDF con todos los datos" @download="(f) => download(exportUrl, f)" />
                 <Link :href="`/terceros/crear${tipo ? '?tipo=' + tipo : ''}`" class="s-btn s-btn-primary w-[150px]">{{ createLabel }}</Link>
             </div>
         </div>

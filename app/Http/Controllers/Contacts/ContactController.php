@@ -148,7 +148,9 @@ class ContactController extends Controller
 
     public function export(Request $request): BinaryFileResponse
     {
-        return \App\Support\Download::export(new ContactsExport($this->query($request)), 'terceros.xlsx', 'Terceros');
+        $title = self::TITLES[$request->input('tipo')] ?? 'Terceros';
+
+        return \App\Support\Download::export(new ContactsExport($this->query($request)), $title.'.xlsx', $title);
     }
 
     /** Busqueda rapida para selectores de documentos. */

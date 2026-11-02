@@ -4,9 +4,10 @@
     <meta charset="utf-8">
     <title>{{ $title }}</title>
     <style>
-        @page { size: A4 {{ $landscape ? 'landscape' : 'portrait' }}; margin: 10mm 9mm 12mm; }
+        @php($wide = count($columns) > 14)
+        @page { size: {{ $wide ? 'A3 landscape' : ($landscape ? 'A4 landscape' : 'A4 portrait') }}; margin: {{ $wide ? '8mm 6mm 10mm' : '10mm 9mm 12mm' }}; }
         * { box-sizing: border-box; }
-        body { font: 9px/1.35 Arial, Helvetica, sans-serif; color: #2d3748; margin: 0; }
+        body { font: {{ $wide ? '7px' : '9px' }}/1.3 Arial, Helvetica, sans-serif; color: #2d3748; margin: 0; }
         .head { display: flex; align-items: center; gap: 14px; border-bottom: 2px solid #0275b3; padding-bottom: 8px; margin-bottom: 8px; }
         .head img { max-height: 46px; max-width: 150px; }
         .head .co { flex: 1; }
@@ -18,8 +19,8 @@
         table { width: 100%; border-collapse: collapse; }
         thead { display: table-header-group; }
         tr { page-break-inside: avoid; }
-        th { background: #f0f9ff; color: #1a4b8c; text-align: left; padding: 4px 5px; border-bottom: 1px solid #b8d4ea; font-weight: bold; }
-        td { padding: 3px 5px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+        th { background: #f0f9ff; color: #1a4b8c; text-align: left; padding: {{ $wide ? '2px 3px' : '4px 5px' }}; border-bottom: 1px solid #b8d4ea; font-weight: bold; }
+        td { padding: {{ $wide ? '2px 3px' : '3px 5px' }}; border-bottom: 1px solid #e2e8f0; vertical-align: top; word-break: break-word; }
         .r { text-align: right; white-space: nowrap; }
         tfoot td { font-weight: bold; border-top: 1.5px solid #1a4b8c; background: #f7fafc; }
         .note { margin-top: 6px; color: #718096; }
