@@ -61,9 +61,19 @@ return [
         ['title' => 'Certificado digital', 'column' => 1, 'items' => [
             $item('Seguimiento Certificado digital', '/configuracion/facturacion-electronica?tab=certificado'),
         ]],
+        ['title' => 'Parámetros', 'column' => 1, 'items' => [
+            $item('Tipos de documento', '/configuracion/tipos-documento'),
+        ]],
     ],
     'Ventas' => [
-        ['title' => 'Documentos', 'column' => 0, 'items' => $sales],
+        ['title' => 'Generales', 'column' => 0, 'items' => [
+            $item('Tipos de documento', '/configuracion/tipos-documento'),
+            $item('Formas de pago', '/configuracion/formas-pago'),
+            $item('Vendedores', '/configuracion/vendedores'),
+            $item('Listas de precios', '/configuracion/listas-precios'),
+            $item('Grupos de inventario', '/configuracion/grupos-inventario'),
+            $item('Líneas de producto', '/configuracion/lineas-producto'),
+        ]],
         ['title' => 'Procesos', 'column' => 0, 'items' => [
             $item('Cuentas puente y de mandato', '/configuracion/ajustes/mandato'),
             $item('Renovación de numeración agotada o próxima a agotarse', '/configuracion/facturacion-electronica?tab=resoluciones'),
@@ -96,12 +106,14 @@ return [
     ],
     'Productos y servicios' => [
         ['title' => 'Generales', 'column' => 0, 'items' => [
-            $item('Categorías de productos y servicios', '/configuracion/lineas-producto'),
+            $item('Líneas de producto', '/configuracion/lineas-producto'),
+            $item('Grupos de inventario', '/configuracion/grupos-inventario'),
             $item('Movimiento de productos / Kárdex', '/reportes/movimiento-productos'),
             $item('Lista de precios', '/configuracion/listas-precios'),
             $item('Configuración de bodegas', '/configuracion/bodegas'),
             $item('Unidades de medida factura electrónica', '/configuracion/unidades-medida'),
             $item('Configuración inventario', '/productos/costeo'),
+            $item('Vendedores', '/configuracion/vendedores'),
         ]],
         ['title' => 'Documentos', 'column' => 1, 'items' => [
             $item('Notas de ensamble', '/configuracion/documentos/notas-ensamble'),
@@ -136,6 +148,7 @@ return [
             $item('Cuentas de gastos frecuentes', '/configuracion/gastos-frecuentes'),
             $item('Otros ingresos', '/configuracion/otros-ingresos'),
             $item('Formas de pago en documentos', '/configuracion/formas-pago'),
+            $item('Tipos de documento', '/configuracion/tipos-documento'),
         ]],
         ['title' => 'Documentos', 'column' => 0, 'items' => [
             $item('Comprobantes contables', '/configuracion/documentos/comprobantes-contables'),

@@ -115,7 +115,7 @@ const isProduct = computed(() => form.type === 'Product');
             <h2 class="s-section-title">Datos generales</h2>
             <div class="mt-6 grid grid-cols-3 gap-x-4 gap-y-5">
                 <label>
-                    <span class="s-label">Categoría del producto<span class="req">*</span></span>
+                    <span class="s-label">Grupo de inventario<span class="req">*</span></span>
                     <select v-model="form.account_group_id" class="s-input" :class="{ 'is-invalid': form.errors.account_group_id }">
                         <option :value="null">Elige una opción</option>
                         <option v-for="g in groups" :key="g.id" :value="g.id">{{ g.name }}</option>
