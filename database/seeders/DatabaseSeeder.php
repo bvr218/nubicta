@@ -14,13 +14,32 @@ class DatabaseSeeder extends Seeder
         $this->call([GeoSeeder::class, RolesSeeder::class]);
 
         $municipality = (string) env('ERP_COMPANY_MUNICIPALITY', '11001');
+        $isPerson = filter_var(env('ERP_COMPANY_IS_PERSON', false), FILTER_VALIDATE_BOOLEAN);
+        $firstName = trim((string) env('ERP_COMPANY_NAME', ''));
+        $surname = trim((string) env('ERP_COMPANY_SURNAME', ''));
+        $businessName = $isPerson
+            ? trim("$firstName $surname") ?: 'Persona natural'
+            : env('ERP_COMPANY_NAME', 'Mi empresa');
+        $tradeName = trim((string) env('ERP_COMPANY_TRADE_NAME', '')) ?: $businessName;
+
+        $companyAttributes = [
+            'business_name' => $businessName,
+            'trade_name' => $tradeName,
+            'municipality_code' => $municipality,
+            'department_code' => (string) env('ERP_COMPANY_DEPARTMENT', substr($municipality, 0, 2)),
+        ];
+        if ($isPerson) {
+            $companyAttributes += [
+                'person_type' => 'natural',
+                'identification_type' => '13',
+                'first_name' => $firstName !== '' ? $firstName : null,
+                'last_name' => $surname !== '' ? $surname : null,
+            ];
+        }
+
         $company = Company::firstOrCreate(
             ['nit' => env('ERP_COMPANY_NIT', '000000000')],
-            [
-                'business_name' => env('ERP_COMPANY_NAME', 'Mi empresa'),
-                'municipality_code' => $municipality,
-                'department_code' => (string) env('ERP_COMPANY_DEPARTMENT', substr($municipality, 0, 2)),
-            ],
+            $companyAttributes,
         );
 
         $email = env('ERP_ADMIN_EMAIL', 'admin@example.com');

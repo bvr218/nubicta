@@ -68,7 +68,7 @@ cp .env.example .env
 php artisan key:generate
 ```
 
-Edita `.env` con la base de datos, Redis, el correo y los datos iniciales (`ERP_COMPANY_NAME`, `ERP_ADMIN_EMAIL`). Luego:
+Edita `.env` con la base de datos, Redis, el correo y los datos iniciales (`ERP_COMPANY_NAME`, `ERP_ADMIN_EMAIL`). Para crear la empresa como persona natural, configura `ERP_COMPANY_IS_PERSON=true`; `ERP_COMPANY_NAME` se usa como nombre(s) y `ERP_COMPANY_SURNAME` como apellidos (opcional). `ERP_COMPANY_TRADE_NAME` define el nombre comercial; si se omite o está vacío, usa el nombre de empresa o nombre(s) y apellidos. Luego:
 
 ```bash
 php artisan migrate --seed      # crea la empresa, el PUC y el usuario administrador (la contraseña sale en la consola)
