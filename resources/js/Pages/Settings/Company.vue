@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -52,9 +52,12 @@ const form = useForm({
 
 const towns = ref(props.municipalities);
 const preview = ref(props.logoUrl);
+const warning = ref(false);
+let warningTimer = null;
 const logoFocus = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('seccion') === 'logo';
 if (logoFocus) setTimeout(() => document.getElementById('logo')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
 const open = ref({ general: true, tributarios: true, moneda: true, representante: true });
+onBeforeUnmount(() => clearTimeout(warningTimer));
 
 watch(
     () => form.department_code,
@@ -88,7 +91,19 @@ function onLogo(e) {
 
 function submit() {
     if (form.person_type === 'natural') form.business_name = `${form.first_name} ${form.last_name}`.trim();
-    form.post('/configuracion/empresa', { forceFormData: true, preserveScroll: true });
+    form.post('/configuracion/empresa', {
+        forceFormData: true,
+        preserveScroll: true,
+        onError: () => {
+            warning.value = true;
+            clearTimeout(warningTimer);
+            warningTimer = setTimeout(() => (warning.value = false), 5000);
+        },
+        onSuccess: () => {
+            warning.value = false;
+            clearTimeout(warningTimer);
+        },
+    });
 }
 </script>
 
@@ -113,19 +128,19 @@ function submit() {
                 </div>
             </div>
             <template v-if="form.person_type === 'natural'">
-                <div class="s-row"><span>Nombre</span><div><input v-model="form.first_name" class="s-input w-[390px]" /><p v-if="form.errors.first_name" class="s-error">{{ form.errors.first_name }}</p></div></div>
-                <div class="s-row"><span>Apellidos</span><div><input v-model="form.last_name" class="s-input w-[390px]" /><p v-if="form.errors.last_name" class="s-error">{{ form.errors.last_name }}</p></div></div>
+                <div class="s-row"><span>Nombre</span><div><input v-model="form.first_name" class="s-input w-[390px]" :class="{ 'is-invalid': form.errors.first_name }" :aria-invalid="!!form.errors.first_name" /><p v-if="form.errors.first_name" class="s-error">{{ form.errors.first_name }}</p></div></div>
+                <div class="s-row"><span>Apellidos</span><div><input v-model="form.last_name" class="s-input w-[390px]" :class="{ 'is-invalid': form.errors.last_name }" :aria-invalid="!!form.errors.last_name" /><p v-if="form.errors.last_name" class="s-error">{{ form.errors.last_name }}</p></div></div>
             </template>
-            <div v-else class="s-row"><span>Razón social</span><div><input v-model="form.business_name" class="s-input w-[390px]" /><p v-if="form.errors.business_name" class="s-error">{{ form.errors.business_name }}</p></div></div>
+            <div v-else class="s-row"><span>Razón social</span><div><input v-model="form.business_name" class="s-input w-[390px]" :class="{ 'is-invalid': form.errors.business_name }" :aria-invalid="!!form.errors.business_name" /><p v-if="form.errors.business_name" class="s-error">{{ form.errors.business_name }}</p></div></div>
             <div v-if="c.siigo_serial" class="s-row"><span>Serial</span><span class="text-ink">{{ c.siigo_serial }}</span></div>
             <div class="s-row"><span>Tipo Identificación</span>
-                <select v-model="form.identification_type" class="s-input w-[390px]">
+                <div><select v-model="form.identification_type" class="s-input w-[390px]" :class="{ 'is-invalid': form.errors.identification_type }" :aria-invalid="!!form.errors.identification_type">
                     <option v-for="(n, k) in catalogs.identification_types" :key="k" :value="k">{{ n }}</option>
-                </select>
+                </select><p v-if="form.errors.identification_type" class="s-error">{{ form.errors.identification_type }}</p></div>
             </div>
             <div class="s-row"><span>Identificación</span>
                 <div class="flex items-center gap-4">
-                    <input v-model="form.nit" class="s-input w-[180px]" inputmode="numeric" />
+                    <input v-model="form.nit" class="s-input w-[180px]" :class="{ 'is-invalid': form.errors.nit }" :aria-invalid="!!form.errors.nit" inputmode="numeric" />
                     <template v-if="form.identification_type === '31'"><span>Dígito Verificación</span><input :value="dv" class="s-input w-[46px] bg-[#e9ecef]" readonly /></template>
                 </div>
             </div>
@@ -144,36 +159,37 @@ function submit() {
                 </div>
             </div>
             <div class="s-row"><span>Departamento</span>
-                <select v-model="form.department_code" class="s-input w-[390px]">
+                <div><select v-model="form.department_code" class="s-input w-[390px]" :class="{ 'is-invalid': form.errors.department_code }" :aria-invalid="!!form.errors.department_code">
                     <option value="">Selecciona</option>
                     <option v-for="d in departments" :key="d.code" :value="d.code">{{ d.name }}</option>
-                </select>
+                </select><p v-if="form.errors.department_code" class="s-error">{{ form.errors.department_code }}</p></div>
             </div>
             <div class="s-row"><span>Ciudad</span>
-                <select v-model="form.municipality_code" class="s-input w-[390px]">
+                <div><select v-model="form.municipality_code" class="s-input w-[390px]" :class="{ 'is-invalid': form.errors.municipality_code }" :aria-invalid="!!form.errors.municipality_code">
                     <option value="">Selecciona</option>
                     <option v-for="m in towns" :key="m.code" :value="m.code">{{ m.name }}</option>
-                </select>
+                </select><p v-if="form.errors.municipality_code" class="s-error">{{ form.errors.municipality_code }}</p></div>
             </div>
             <div class="s-row items-start"><span>Código postal</span>
                 <div><input v-model="form.postal_code" class="s-input w-[390px]" /><a href="https://visor.codigopostal.gov.co" target="_blank" class="mt-1 block text-primary underline">Consultar códigos postales</a></div>
             </div>
-            <div class="s-row"><span>Dirección</span><input v-model="form.address" class="s-input w-[390px]" /></div>
+            <div class="s-row"><span>Dirección</span><div><input v-model="form.address" class="s-input w-[390px]" :class="{ 'is-invalid': form.errors.address }" :aria-invalid="!!form.errors.address" /><p v-if="form.errors.address" class="s-error">{{ form.errors.address }}</p></div></div>
             <div class="s-row"><span>Tipo de régimen IVA</span>
-                <select v-model="form.tax_regime" class="s-input w-[390px]">
+                <div><select v-model="form.tax_regime" class="s-input w-[390px]" :class="{ 'is-invalid': form.errors.tax_regime }" :aria-invalid="!!form.errors.tax_regime">
                     <option v-for="(n, k) in catalogs.tax_regimes" :key="k" :value="k">{{ regimeLabel(k, n) }}</option>
-                </select>
+                </select><p v-if="form.errors.tax_regime" class="s-error">{{ form.errors.tax_regime }}</p></div>
             </div>
-            <div class="s-row"><span>Correo contacto</span><input v-model="form.email" type="email" class="s-input w-[390px]" /></div>
+            <div class="s-row"><span>Correo contacto</span><div><input v-model="form.email" type="email" class="s-input w-[390px]" :class="{ 'is-invalid': form.errors.email }" :aria-invalid="!!form.errors.email" /><p v-if="form.errors.email" class="s-error">{{ form.errors.email }}</p></div></div>
             <div class="s-row"><span>Contacto</span><input v-model="form.contact_name" class="s-input w-[390px]" /></div>
             <div class="s-row"><span>Página WEB</span><input v-model="form.website" class="s-input w-[390px]" /></div>
             <div class="s-row"><span>Teléfono</span>
                 <div class="flex gap-3">
-                    <input v-model="form.phone" class="s-input w-[130px]" />
+                    <input v-model="form.phone" class="s-input w-[130px]" :class="{ 'is-invalid': form.errors.phone }" :aria-invalid="!!form.errors.phone" />
                     <input v-model="form.phone2" class="s-input w-[120px]" />
                     <input v-model="form.phone_ext" class="s-input w-[110px]" placeholder="Ext" />
                 </div>
             </div>
+            <p v-if="form.errors.phone" class="s-error ml-[310px]">{{ form.errors.phone }}</p>
         </div>
 
         <!-- Datos tributarios -->
@@ -241,6 +257,14 @@ function submit() {
         <button type="button" class="bg-[#7ac142] px-3 py-[7px] text-[13px] font-semibold text-white" :disabled="form.processing" @click="submit">Guardar</button>
         <Link href="/configuracion" class="bg-primary px-3 py-[7px] text-[13px] font-semibold text-white">Volver</Link>
     </div>
+
+    <transition enter-from-class="opacity-0 translate-y-2" leave-to-class="opacity-0" enter-active-class="transition" leave-active-class="transition">
+        <div v-if="warning" class="fixed bottom-6 right-6 z-[60] flex max-w-[420px] items-start gap-3 rounded-[8px] bg-[#FF4500] px-4 py-3 text-white shadow-lg" role="alert" aria-live="assertive">
+            <Icon icon="triangle-exclamation" class="mt-[2px]" />
+            <span>No se pudieron guardar los datos. Revisa los campos marcados en rojo.</span>
+            <button type="button" class="ml-2 opacity-80 hover:opacity-100" aria-label="Cerrar notificación" @click="warning = false; clearTimeout(warningTimer)"><Icon icon="xmark" /></button>
+        </div>
+    </transition>
 </template>
 
 <style scoped>
