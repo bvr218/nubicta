@@ -4,6 +4,7 @@ namespace App\Http\Controllers\ApiV1;
 
 use App\Models\Contact;
 use App\Models\Employee;
+use App\Services\Dian\DocumentMapper;
 use App\Support\ColombianNit;
 use App\Support\CurrentCompany;
 use Illuminate\Http\JsonResponse;
@@ -106,7 +107,9 @@ class ContactApiController extends ApiBaseController
             'responsabilidades_fiscales' => ['nullable', 'array'],
             'responsabilidades_fiscales.*' => [Rule::in(array_keys(config('erp.fiscal_responsibilities')))],
             'direccion' => ['nullable', 'string', 'max:250'],
+            'pais' => ['nullable', Rule::in(array_keys(config('countries')))],
             'ciudad' => ['nullable', 'exists:municipalities,code'],
+            'ciudad_extranjera' => ['nullable', 'string', 'max:80'],
             'codigo_postal' => ['nullable', 'string', 'max:10'],
             'indicativo' => ['nullable', 'string', 'max:6'],
             'telefono_fijo' => ['nullable', 'string', 'max:30'],
@@ -127,7 +130,15 @@ class ContactApiController extends ApiBaseController
             'razon_social.required_if' => 'La razón social es obligatoria para persona jurídica.',
         ])->validate();
 
-        $id = preg_replace('/\D/', '', $data['identificacion']) ?: $data['identificacion'];
+        $country = strtoupper((string) ($data['pais'] ?? $input['pais'] ?? $contact?->country_code ?? 'CO'));
+        $foreign = $country !== 'CO' || in_array((string) $data['tipo_identificacion'], DocumentMapper::NON_RESIDENT_IDS, true);
+        if ($country === 'CO' && empty($data['ciudad']) && ! $contact?->municipality_code) {
+            throw ValidationException::withMessages(['ciudad' => 'Elige la ciudad de Colombia.']);
+        }
+        if ($country !== 'CO' && ! filled($data['ciudad_extranjera'] ?? $contact?->foreign_city)) {
+            throw ValidationException::withMessages(['ciudad_extranjera' => 'Escribe la ciudad del exterior.']);
+        }
+        $id = $foreign ? trim($data['identificacion']) : (preg_replace('/\D/', '', $data['identificacion']) ?: $data['identificacion']);
         $duplicate = Contact::query()->where('identification', $id)->where('branch_office', $branch)->when($contact, fn ($q) => $q->whereKeyNot($contact->id))->first();
         if ($duplicate) {
             throw ValidationException::withMessages(['identificacion' => "Ya existe el tercero {$duplicate->name} (id {$duplicate->id}) con la identificación {$id} y sucursal {$branch}."]);
@@ -146,7 +157,9 @@ class ContactApiController extends ApiBaseController
             'identification' => $id, 'branch_office' => $branch,
             'first_name' => $natural ? $data['nombres'] : null, 'last_name' => $natural ? $data['apellidos'] : null, 'business_name' => $natural ? null : $data['razon_social'],
             'dv' => $data['tipo_identificacion'] === '31' ? (string) ColombianNit::verificationDigit($id) : null,
-            'department_code' => ! empty($data['ciudad']) ? substr($data['ciudad'], 0, 2) : ($contact?->department_code), 'country_code' => $contact?->country_code ?? 'CO',
+            'department_code' => $country === 'CO' && ! empty($data['ciudad']) ? substr($data['ciudad'], 0, 2) : ($country === 'CO' ? $contact?->department_code : null),
+            'municipality_code' => $country === 'CO' ? ($data['ciudad'] ?? $contact?->municipality_code) : null,
+            'country_code' => $country, 'foreign_city' => $country === 'CO' ? null : trim((string) ($data['ciudad_extranjera'] ?? $contact?->foreign_city ?? '')),
             'fiscal_responsibilities' => $data['responsabilidades_fiscales'] ?? $contact?->fiscal_responsibilities ?? ['R-99-PN'],
             'vat_responsible' => (bool) ($data['responsable_iva'] ?? false), 'credit_limit' => $data['cupo_credito'] ?? 0, 'credit_days' => $data['dias_credito'] ?? 0,
             'active' => (bool) ($data['activo'] ?? true),

@@ -250,6 +250,7 @@ class DocumentFormController extends Controller
             'priceLists' => PriceList::query()->where('active', true)->orderBy('position')->get(['id', 'name']),
             'banks' => BankAccount::query()->where('active', true)->with('account:id,code,name')->orderBy('name')->get(['id', 'name', 'account_id']),
             'today' => now()->toDateString(),
+            ...(($form['page'] ?? null) === 'Trade' ? ['currencies' => config('erp.currencies')] : []),
         ]);
     }
 

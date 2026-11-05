@@ -385,6 +385,7 @@ class DocumentLocator
             'related_id' => $doc->related_document_id, 'related_label' => $doc->related_name ? $doc->related_name.' - '.($contact->name ?? '') : '',
             'contact_id' => $doc->contact_id, 'contact_label' => $contact ? "{$contact->identification} - {$contact->name}" : '',
             'cost_center_id' => $doc->cost_center_id, 'observations' => $doc->observations ?? '',
+            'currency' => $doc->currency ?: 'COP', 'exchange_rate' => (float) ($doc->exchange_rate ?? 1),
             'items' => $lines,
             'credit' => $credit,
             'due_date' => $credit ? substr((string) $doc->due_date, 0, 10) : null,

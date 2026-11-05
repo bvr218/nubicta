@@ -96,6 +96,12 @@ class UblBuilder
         $p = $d['payment'];
         $x .= '<cac:PaymentMeans>'.$this->el('cbc:ID', $p['id']).$this->el('cbc:PaymentMeansCode', $p['code'])
             .((($p['id'] === '2' || ! empty($p['show_due'])) && ! empty($p['due_date'])) ? $this->el('cbc:PaymentDueDate', $p['due_date']) : '').'</cac:PaymentMeans>';
+        if (($d['currency'] ?? 'COP') !== 'COP' && (float) ($d['exchange_rate'] ?? 0) > 0) {
+            $x .= '<cac:PaymentExchangeRate>'.$this->el('cbc:SourceCurrencyCode', $d['currency'])
+                .$this->el('cbc:SourceCurrencyBaseRate', '1.00').$this->el('cbc:TargetCurrencyCode', 'COP')
+                .$this->el('cbc:TargetCurrencyBaseRate', '1.00').$this->el('cbc:CalculationRate', $this->num((float) $d['exchange_rate'], 4))
+                .$this->el('cbc:Date', $d['issue_date']).'</cac:PaymentExchangeRate>';
+        }
 
         $x .= $this->taxTotals($d['taxes'], 'TaxTotal', $d['currency']);
         $x .= $this->taxTotals($d['withholdings'], 'WithholdingTaxTotal', $d['currency']);
@@ -211,11 +217,24 @@ class UblBuilder
 
     private function address(array $p): string
     {
-        return '<cac:RegistrationAddress>'.$this->el('cbc:ID', $p['municipality_code']).$this->el('cbc:CityName', $p['city'])
-            .(filled($p['postal'] ?? null) ? $this->el('cbc:PostalZone', $p['postal']) : '')
-            .$this->el('cbc:CountrySubentity', $p['department']).$this->el('cbc:CountrySubentityCode', $p['department_code'])
-            .'<cac:AddressLine>'.$this->el('cbc:Line', $p['address']).'</cac:AddressLine>'
-            .'<cac:Country>'.$this->el('cbc:IdentificationCode', 'CO').'<cbc:Name languageID="es">Colombia</cbc:Name></cac:Country></cac:RegistrationAddress>';
+        $country = strtoupper((string) ($p['country_code'] ?? 'CO')) ?: 'CO';
+        $name = (string) ($p['country_name'] ?? ($country === 'CO' ? 'Colombia' : $country));
+        $foreign = $country !== 'CO';
+        $x = '<cac:RegistrationAddress>';
+        if (! $foreign && filled($p['municipality_code'] ?? null)) {
+            $x .= $this->el('cbc:ID', $p['municipality_code']);
+        }
+        $x .= $this->el('cbc:CityName', $p['city'] ?? '');
+        if (! $foreign && filled($p['postal'] ?? null)) {
+            $x .= $this->el('cbc:PostalZone', $p['postal']);
+        }
+        if (! $foreign) {
+            $x .= $this->el('cbc:CountrySubentity', $p['department'] ?? '').$this->el('cbc:CountrySubentityCode', $p['department_code'] ?? '');
+        }
+        $x .= '<cac:AddressLine>'.$this->el('cbc:Line', $p['address']).'</cac:AddressLine>';
+        $x .= '<cac:Country>'.$this->el('cbc:IdentificationCode', $country).'<cbc:Name languageID="es">'.$this->e($name).'</cbc:Name></cac:Country></cac:RegistrationAddress>';
+
+        return $x;
     }
 
     /** @param list<array{code:string, name:string, percent:float, base:float, amount:float}> $taxes */

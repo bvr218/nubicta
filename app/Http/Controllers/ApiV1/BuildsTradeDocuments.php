@@ -60,6 +60,8 @@ trait BuildsTradeDocuments
             'retenciones' => ['nullable', 'array'],
             'retenciones.*' => ['integer', 'exists:taxes,id'],
             'observaciones' => ['nullable', 'string', 'max:4000'],
+            'moneda' => ['nullable', 'string', 'size:3'],
+            'tasa_cambio' => ['nullable', 'numeric', 'gt:0'],
             'vendedor_id' => ['nullable', 'integer', 'exists:sellers,id'],
             'centro_costo_id' => ['nullable', 'integer', 'exists:cost_centers,id'],
             'lista_precio_id' => ['nullable', 'integer', 'exists:price_lists,id'],
@@ -138,6 +140,8 @@ trait BuildsTradeDocuments
 
         return [
             'date' => $input['fecha'], 'contact_id' => $contact->id, 'items' => $items, 'summary_retentions' => $summary,
+            'currency' => strtoupper((string) ($input['moneda'] ?? 'COP')),
+            'exchange_rate' => (float) ($input['tasa_cambio'] ?? 1),
             'payments' => ($input['forma_pago'] ?? null) === 'contado' ? [] : $payments,
             'credit' => ($input['forma_pago'] ?? null) !== 'contado' && (! empty($input['credito']) || ! $payments),
             'payment_form' => ($input['forma_pago'] ?? null) === 'contado' ? 'contado' : null,

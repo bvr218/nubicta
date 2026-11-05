@@ -9,6 +9,7 @@ import { confirmDialog } from '../../composables/dialog';
 const props = defineProps({
     form: Object, docTypes: Array, paymentMethods: Array, charges: Array, withholdings: Array,
     sellers: Array, defaultSeller: { type: Number, default: null }, costCenters: Array, warehouses: Array, priceLists: { type: Array, default: () => [] }, today: String, initial: { type: Object, default: null },
+    currencies: { type: Object, default: () => ({ COP: 'Peso colombiano', USD: 'Dólar estadounidense', EUR: 'Euro' }) },
 });
 const f = props.form;
 const sale = !f.purchase;
@@ -39,6 +40,7 @@ const doc = useForm({
     supplier_prefix: f.supplier_number ? f.doc : '', supplier_number: '',
     checks: Object.fromEntries((f.checks ?? []).map((c) => [c, false])),
     header_text: '', footer_text: '', observations: '',
+    currency: 'COP', exchange_rate: '',
     items: [blankItem()],
     mandate: false,
     payment_form: '',
@@ -53,7 +55,7 @@ const doc = useForm({
     checks: { ...Object.fromEntries((f.checks ?? []).map((c) => [c, false])), ...(props.initial?.checks ?? {}) },
     summary_retentions: { ...Object.fromEntries((f.retentions ?? []).map((r) => [r, null])), ...(props.initial?.summary_retentions ?? {}) },
 });
-const inlineErrorFields = ['related_id', 'document_type', 'date', 'contact_id', 'reason', 'items'];
+const inlineErrorFields = ['related_id', 'document_type', 'date', 'contact_id', 'reason', 'items', 'currency', 'exchange_rate'];
 const unhandledErrors = computed(() => Object.entries(doc.errors)
     .filter(([field]) => !inlineErrorFields.includes(field))
     .map(([field, message]) => ({ field, message })));
@@ -434,6 +436,18 @@ async function submit(action) {
                         <div>
                             <input v-model="doc.date" type="date" class="doc-input req w-[150px]" :class="{ 'is-invalid': doc.errors.date }" />
                             <p v-if="doc.errors.date" class="text-[10px] text-danger">{{ doc.errors.date }}</p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-[76px_1fr] items-start gap-[8px]">
+                        <span class="doc-label">Moneda</span>
+                        <div>
+                            <div class="flex items-center gap-[6px]">
+                                <select v-model="doc.currency" class="doc-input w-[88px]">
+                                    <option v-for="(name, code) in currencies" :key="code" :value="code">{{ code }}</option>
+                                </select>
+                                <input v-if="doc.currency && doc.currency !== 'COP'" v-model="doc.exchange_rate" type="number" min="0" step="0.01" class="doc-input w-[130px]" :class="{ 'is-invalid': doc.errors.exchange_rate }" placeholder="Pesos por 1" />
+                            </div>
+                            <p v-if="doc.errors.currency || doc.errors.exchange_rate" class="text-[10px] text-danger">{{ doc.errors.currency || doc.errors.exchange_rate }}</p>
                         </div>
                     </div>
                     <div class="grid grid-cols-[76px_1fr] items-start gap-[8px]">

@@ -6,6 +6,7 @@ use App\Services\Dian\AttachedDocumentBuilder;
 use App\Services\Dian\NominaBuilder;
 use App\Services\Dian\SimulatedDianTransport;
 use App\Services\Dian\SoapDianTransport;
+use App\Services\Dian\DocumentMapper;
 use App\Services\Dian\UblBuilder;
 use App\Services\Dian\RadianEventBuilder;
 use App\Services\Dian\XadesSigner;
@@ -291,6 +292,44 @@ class DianXmlTest extends TestCase
         $this->assertStringContainsString('<cbc:CustomizationID>20</cbc:CustomizationID>', $xml);
         $this->assertStringContainsString('<cbc:ID>FE123</cbc:ID>', $xml);
         $this->assertStringContainsString('>abc123</cbc:UUID>', $xml);
+    }
+
+    public function test_non_resident_is_id_type_or_country(): void
+    {
+        $this->assertTrue(DocumentMapper::nonResident(['id_type' => '50', 'country_code' => 'CO']));
+        $this->assertTrue(DocumentMapper::nonResident(['id_type' => '31', 'country_code' => 'DO']));
+        $this->assertFalse(DocumentMapper::nonResident(['id_type' => '31', 'country_code' => 'CO']));
+        $this->assertFalse(DocumentMapper::nonResident(['id_type' => '13', 'country_code' => 'CO']));
+    }
+
+    public function test_support_document_for_non_resident_uses_customization_11_and_exchange_rate(): void
+    {
+        $d = $this->invoice();
+        $d['kind'] = 'DS';
+        $d['customization'] = '11';
+        $d['currency'] = 'USD';
+        $d['exchange_rate'] = 4325.67;
+        $d['supplier'] = [
+            'type' => '2', 'id_type' => '50', 'id' => '22300801382', 'dv' => '', 'name' => 'JEFFERSON RAMIREZ',
+            'address' => 'Republica dominicana', 'municipality_code' => null, 'city' => 'Santo Domingo',
+            'department' => '', 'department_code' => '', 'postal' => null, 'country_code' => 'DO', 'country_name' => 'República Dominicana',
+            'email' => 'a@b.co', 'phone' => '3000000000', 'tax_level' => 'R-99-PN', 'tax_scheme' => ['ZZ', 'No aplica'], 'registration_prefix' => null,
+        ];
+
+        $xml = (new UblBuilder)->build($d)['xml'];
+
+        $this->assertStringContainsString('<cbc:CustomizationID>11</cbc:CustomizationID>', $xml);
+        $this->assertStringContainsString('schemeName="50"', $xml);
+        $this->assertStringContainsString('<cbc:IdentificationCode>DO</cbc:IdentificationCode>', $xml);
+        $this->assertStringContainsString('República Dominicana', $xml);
+        $this->assertStringContainsString('<cbc:CityName>Santo Domingo</cbc:CityName>', $xml);
+        $this->assertStringContainsString('<cbc:DocumentCurrencyCode>USD</cbc:DocumentCurrencyCode>', $xml);
+        $this->assertStringContainsString('<cbc:SourceCurrencyCode>USD</cbc:SourceCurrencyCode>', $xml);
+        $this->assertStringContainsString('<cbc:TargetCurrencyCode>COP</cbc:TargetCurrencyCode>', $xml);
+        $this->assertStringContainsString('<cbc:CalculationRate>4325.6700</cbc:CalculationRate>', $xml);
+        $this->assertStringNotContainsString('<cbc:CustomizationID>10</cbc:CustomizationID>', $xml);
+        $this->assertStringNotContainsString('>41551</cbc:ID>', $xml);
+        $this->assertStringNotContainsString('<cbc:PostalZone>000000</cbc:PostalZone>', $xml);
     }
 
     private function invoice(): array

@@ -263,7 +263,7 @@ class TradeRegistrar
             'external_reference' => $data['external_reference'] ?? null, 'request_hash' => $data['request_hash'] ?? null,
             'payment_form' => ($data['payment_form'] ?? null) === 'contado' ? 'contado' : null,
             'principal' => $data['principal'] ?? null, 'external_invoice' => $data['external_invoice'] ?? null,
-            'currency' => 'COP', 'exchange_rate' => 1,
+            'currency' => ($money = $this->money($data))[0], 'exchange_rate' => $money[1],
             'subtotal' => $calc['subtotal'], 'discount' => $calc['discount'], 'tax_total' => $calc['tax_total'],
             'withholding_total' => $calc['withholding_total'], 'total' => $calc['total'],
             'balance' => $kind === 'NC' || ! in_array($kind, ['FV', 'ND'], true) ? 0 : $credit,
@@ -289,7 +289,8 @@ class TradeRegistrar
             'number' => $number, 'name' => $name, 'date' => $data['date'], 'due_date' => $dueDate, 'contact_id' => $contact->id,
             'supplier_prefix' => $data['supplier_prefix'] ?? null, 'supplier_number' => $data['supplier_number'] ?? null,
             'cost_center_id' => $data['cost_center_id'] ?? null, 'related_document_id' => $related?->id, 'related_name' => $related?->name,
-            'currency' => 'COP', 'subtotal' => $calc['subtotal'], 'discount' => $calc['discount'], 'tax_total' => $calc['tax_total'],
+            'currency' => ($money = $this->money($data))[0], 'exchange_rate' => $money[1],
+            'subtotal' => $calc['subtotal'], 'discount' => $calc['discount'], 'tax_total' => $calc['tax_total'],
             'withholding_total' => $calc['withholding_total'], 'total' => $calc['total'],
             'balance' => in_array($kind, ['FC', 'DS'], true) ? $credit : 0,
             'observations' => $data['observations'] ?? null, 'status' => 'issued',
@@ -375,6 +376,10 @@ class TradeRegistrar
             return $costs;
         }
         $concept = DocumentType::TYPES[$kind] ?? $kind;
+        $rate = (float) ($doc->exchange_rate ?? 1);
+        if ($rate <= 0) {
+            $rate = 1;
+        }
         foreach ($calc['lines'] as $idx => $l) {
             if (($l['role'] ?? null) === 'mandante' || ($l['type'] ?? null) === 'Free') {
                 continue;
@@ -388,7 +393,8 @@ class TradeRegistrar
             if (! $p || ! $p->stock_control) {
                 continue;
             }
-            $unitCost = in_array($kind, ['FC', 'DS'], true) ? $l['base'] / $l['quantity'] : null;
+            $unit = $l['quantity'] != 0 ? $l['base'] / $l['quantity'] : 0;
+            $unitCost = in_array($kind, ['FC', 'DS'], true) ? ($rate !== 1.0 ? round($unit * $rate, 4) : $unit) : null;
             if ($kind === 'NC') {
                 $unitCost = (float) $p->average_cost;
             }
@@ -420,8 +426,12 @@ class TradeRegistrar
     {
         $entry = new LedgerEntry($this->accounts, $contact);
         $reverse = in_array($kind, ['NC', 'NA'], true);
-        // $side true = debito en el documento normal (FV para ventas, FC para compras)
-        $put = fn (int $account, float $value, bool $debit) => ($debit xor $reverse) ? $entry->debit($account, $value) : $entry->credit($account, $value);
+        $rate = (float) ($doc->exchange_rate ?? 1);
+        $fx = $rate > 0 && $rate !== 1.0 ? fn (float $v) => round($v * $rate, 2) : fn (float $v) => $v;
+        // $side true = debito en el documento normal (FV para ventas, FC para compras). El costo de inventario ya está en pesos.
+        $put = fn (int $account, float $value, bool $debit, bool $convert = true) => ($debit xor $reverse)
+            ? $entry->debit($account, $convert ? $fx($value) : $value)
+            : $entry->credit($account, $convert ? $fx($value) : $value);
         $taxAccount = fn (Tax $tax, bool $forPurchases) => $reverse
             ? $this->accounts->taxReturn($tax, $forPurchases)
             : $this->accounts->tax($tax, $forPurchases);
@@ -478,8 +488,8 @@ class TradeRegistrar
                 $put($taxAccount($l['withholding'], false), $l['withholding_value'], true);
             }
             if (! empty($costs[$idx])) {
-                $put($this->accounts->group($group, 'cost'), $costs[$idx], true);
-                $put($this->accounts->group($group, 'inventory'), $costs[$idx], false);
+                $put($this->accounts->group($group, 'cost'), $costs[$idx], true, false);
+                $put($this->accounts->group($group, 'inventory'), $costs[$idx], false, false);
             }
         }
         foreach ($calc['summary'] as $s) {
@@ -494,6 +504,25 @@ class TradeRegistrar
         }
 
         $entry->post($doc->date, $doc->name, $kind);
+    }
+
+    /** @return array{0:string, 1:float} */
+    private function money(array $data): array
+    {
+        $currency = strtoupper(trim((string) ($data['currency'] ?? 'COP'))) ?: 'COP';
+        $allowed = array_keys(config('erp.currencies', ['COP' => 'Peso colombiano']));
+        if (! in_array($currency, $allowed, true)) {
+            throw ValidationException::withMessages(['currency' => "La moneda {$currency} no está disponible. Usa COP, USD o EUR."]);
+        }
+        if ($currency === 'COP') {
+            return ['COP', 1.0];
+        }
+        $rate = (float) ($data['exchange_rate'] ?? 0);
+        if ($rate <= 0) {
+            throw ValidationException::withMessages(['exchange_rate' => "Indica la tasa de cambio: cuántos pesos vale 1 {$currency}."]);
+        }
+
+        return [$currency, $rate];
     }
 
     private function warehouse(): int

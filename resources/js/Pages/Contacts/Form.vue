@@ -10,6 +10,7 @@ const props = defineProps({
     cityLabel: { type: String, default: '' },
     defaultMunicipality: { type: String, default: null },
     identificationTypes: { type: Object, required: true },
+    countries: { type: Object, required: true },
     responsibilities: { type: Object, required: true },
     sellers: { type: Array, required: true },
     priceLists: { type: Array, required: true },
@@ -33,6 +34,8 @@ const form = useForm({
     vat_responsible: c.vat_responsible ?? false,
     fiscal_responsibilities: c.fiscal_responsibilities ?? ['R-99-PN'],
     address: c.address ?? '',
+    country_code: c.country_code ?? 'CO',
+    foreign_city: c.foreign_city ?? '',
     department_code: c.department_code ?? null,
     municipality_code: c.municipality_code ?? props.defaultMunicipality ?? '',
     postal_code: c.postal_code ?? '',
@@ -57,6 +60,8 @@ const city = ref(props.cityLabel);
 if (!props.contact && !form.department_code && props.defaultMunicipality) form.department_code = props.defaultMunicipality.slice(0, 2);
 const open = ref({ contactos: !!form.people.length, vendedor: false, observaciones: !!form.observations });
 const isCompany = computed(() => form.person_type === 'juridica');
+const abroad = computed(() => form.country_code && form.country_code !== 'CO');
+const foreignId = computed(() => ['21', '22', '41', '42', '47', '50'].includes(String(form.identification_type)));
 const regime = computed({
     get: () => (form.vat_responsible ? '48' : '49'),
     set: (v) => (form.vat_responsible = v === '48'),
@@ -67,6 +72,15 @@ function onPersonType() {
 }
 function pickCity(m) {
     form.department_code = m?.department_code ?? null;
+}
+function onCountry() {
+    if (abroad.value) {
+        form.municipality_code = '';
+        form.department_code = null;
+        city.value = '';
+    } else {
+        form.foreign_city = '';
+    }
 }
 async function autocompleteDv() {
     if (!form.identification) return;
@@ -142,6 +156,7 @@ const types = [
                             <label class="w-[60px]"><input v-model="form.dv" maxlength="1" class="s-line" placeholder="Dv" /></label>
                         </div>
                         <p v-if="form.errors.identification" class="s-error -mt-4">{{ form.errors.identification }}</p>
+                        <p v-if="foreignId" class="-mt-3 text-[12px] text-muted">Este documento es de un no residente. Elige el país y la ciudad; si dejas Colombia, el documento soporte lo rechaza la DIAN.</p>
                         <button type="button" class="-mt-3 text-center text-[12px] font-bold text-muted hover:text-primary" @click="autocompleteDv">
                             Autocompletar datos <Icon icon="circle-question" class="text-primary" />
                         </button>
@@ -156,9 +171,18 @@ const types = [
                         </template>
                         <label v-else><input v-model="form.business_name" class="s-line" :class="{ 'is-invalid': form.errors.business_name }" placeholder="* Razón social" /></label>
                         <label><input v-model="form.trade_name" class="s-line" placeholder="Nombre comercial" /></label>
-                        <label><span class="s-line-label">Ciudad</span>
+                        <label><span class="s-line-label">País</span>
+                            <select v-model="form.country_code" class="s-line" @change="onCountry">
+                                <option v-for="(name, code) in countries" :key="code" :value="code">{{ name }}</option>
+                            </select>
+                        </label>
+                        <label v-if="!abroad"><span class="s-line-label">Ciudad</span>
                             <Lookup v-model="form.municipality_code" v-model:label="city" url="/api/municipios" value-key="code" input-class="s-line" placeholder="Ciudad" @pick="pickCity" />
                         </label>
+                        <label v-else><span class="s-line-label">Ciudad</span>
+                            <input v-model="form.foreign_city" class="s-line" :class="{ 'is-invalid': form.errors.foreign_city }" placeholder="Ciudad" />
+                        </label>
+                        <p v-if="form.errors.municipality_code || form.errors.foreign_city" class="s-error -mt-4">{{ form.errors.municipality_code || form.errors.foreign_city }}</p>
                         <label><input v-model="form.address" class="s-line" placeholder="Dirección" /></label>
                     </div>
                 </div>

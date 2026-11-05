@@ -40,7 +40,7 @@ class ContactController extends Controller
                 'roles' => $c->rolesLabel(),
                 'phone' => $c->mobile ?: $c->phone,
                 'email' => $c->email,
-                'city' => $c->municipality?->name,
+                'city' => $c->municipality?->name ?: $c->foreign_city,
                 'active' => $c->active,
             ]);
 
@@ -186,6 +186,7 @@ class ContactController extends Controller
             'contact' => $contact,
             'role' => $role,
             'identificationTypes' => config('erp.identification_types'),
+            'countries' => config('countries'),
             'responsibilities' => config('erp.fiscal_responsibilities'),
             'cityLabel' => ($m = Municipality::with('department')->find($contact ? $contact->municipality_code : auth()->user()?->company?->municipality_code))
                 ? "{$m->name} - {$m->department?->name}" : '',
@@ -215,8 +216,10 @@ class ContactController extends Controller
             'fiscal_responsibilities' => ['array', 'min:1'],
             'fiscal_responsibilities.*' => [Rule::in(array_keys(config('erp.fiscal_responsibilities')))],
             'address' => ['nullable', 'string', 'max:250'],
+            'country_code' => ['required', Rule::in(array_keys(config('countries')))],
+            'foreign_city' => ['nullable', 'string', 'max:80', Rule::requiredIf(fn () => $request->input('country_code') !== 'CO')],
             'department_code' => ['nullable', 'exists:departments,code'],
-            'municipality_code' => ['nullable', 'exists:municipalities,code'],
+            'municipality_code' => ['nullable', 'exists:municipalities,code', Rule::requiredIf(fn () => $request->input('country_code', 'CO') === 'CO')],
             'postal_code' => ['nullable', 'string', 'max:10'],
             'phone_indicative' => ['nullable', 'string', 'max:6'],
             'phone' => ['nullable', 'string', 'max:30'],
@@ -246,7 +249,9 @@ class ContactController extends Controller
             'first_name.required_if' => 'Los nombres son obligatorios.',
             'last_name.required_if' => 'Los apellidos son obligatorios.',
             'business_name.required_if' => 'La razón social es obligatoria.',
-        ], ['identification' => 'identificación', 'email' => 'correo electrónico']);
+            'foreign_city.required' => 'Escribe la ciudad del exterior.',
+            'municipality_code.required' => 'Elige la ciudad.',
+        ], ['identification' => 'identificación', 'email' => 'correo electrónico', 'foreign_city' => 'ciudad', 'country_code' => 'país']);
     }
 
     private function attributes(array $data): array
@@ -261,6 +266,13 @@ class ContactController extends Controller
         $attrs['branch_office'] = (int) ($data['branch_office'] ?? 0);
         $attrs['credit_limit'] = $data['credit_limit'] ?? 0;
         $attrs['credit_days'] = $data['credit_days'] ?? 0;
+        $attrs['country_code'] = strtoupper((string) ($data['country_code'] ?? 'CO'));
+        if ($attrs['country_code'] === 'CO') {
+            $attrs['foreign_city'] = null;
+        } else {
+            $attrs['municipality_code'] = null;
+            $attrs['department_code'] = null;
+        }
 
         return $attrs;
     }

@@ -125,6 +125,18 @@ class ReceiptRegistrar
             }
             $applied = round(array_sum(array_column($lines, 'value')), 2);
             $rest = round($value - $applied, 2);
+            $currencies = collect($lines)->map(fn ($l) => $l['doc'] ? strtoupper((string) ($l['doc']->currency ?: 'COP')) : null)->filter()->unique()->values();
+            if ($currencies->count() > 1) {
+                throw ValidationException::withMessages(['items' => 'Un recibo no puede mezclar documentos en distintas monedas.']);
+            }
+            $rate = 1.0;
+            if ($currencies->count() === 1 && $currencies[0] !== 'COP') {
+                $rate = (float) collect($lines)->first(fn ($l) => $l['doc'])['doc']->exchange_rate;
+                if ($rate <= 0) {
+                    throw ValidationException::withMessages(['items' => "El documento en {$currencies[0]} no tiene tasa de cambio a pesos."]);
+                }
+            }
+            $fx = $rate !== 1.0 ? fn (float $v) => round($v * $rate, 2) : fn (float $v) => $v;
             if ($rest < -0.009) {
                 throw ValidationException::withMessages(['value' => 'El valor es menor que lo aplicado a los documentos']);
             }
@@ -147,7 +159,7 @@ class ReceiptRegistrar
             ]);
 
             $entry = new LedgerEntry($this->accounts, $contact);
-            $incoming ? $entry->debit($moneyAccount, $value) : $entry->credit($moneyAccount, $value);
+            $incoming ? $entry->debit($moneyAccount, $fx($value)) : $entry->credit($moneyAccount, $fx($value));
             foreach ($lines as $l) {
                 $d = $l['doc'];
                 $adjusted = round(array_sum(array_column($l['adjustments'], 'value')), 2);
@@ -158,10 +170,10 @@ class ReceiptRegistrar
                 ]);
                 foreach ($l['adjustments'] as $a) {
                     DB::table('receipt_item_adjustments')->insert(['receipt_item_id' => $item->id] + $a);
-                    $incoming ? $entry->debit($a['account_id'], $a['value']) : $entry->credit($a['account_id'], $a['value']);
+                    $incoming ? $entry->debit($a['account_id'], $fx((float) $a['value'])) : $entry->credit($a['account_id'], $fx((float) $a['value']));
                 }
                 $settled = round($l['value'] + $adjusted, 2);
-                ($incoming xor $settled < 0) ? $entry->credit($l['account_id'], abs($settled)) : $entry->debit($l['account_id'], abs($settled));
+                ($incoming xor $settled < 0) ? $entry->credit($l['account_id'], $fx(abs($settled))) : $entry->debit($l['account_id'], $fx(abs($settled)));
             }
             $entry->post($data['date'], $name, Numbering::LEDGER_PREFIX[$kind] ?? $kind);
 

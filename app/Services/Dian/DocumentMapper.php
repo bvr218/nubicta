@@ -11,12 +11,26 @@ use App\Models\SalesDocument;
 use App\Models\Tax;
 use App\Support\ColombianNit;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /** Convierte facturas, notas y documentos soporte del ERP al arreglo que consume UblBuilder. */
 class DocumentMapper
 {
     /** Clave tecnica publica de la numeracion de pruebas SETP de habilitacion. */
     public const TEST_TECHNICAL_KEY = 'fc8eac422eba16e22ffd8c6f94b3f40a6e38162c';
+
+    /** Tabla 16.2.1 del anexo de documento soporte: tipos que identifican a un no residente. */
+    public const NON_RESIDENT_IDS = ['21', '22', '41', '42', '47', '50'];
+
+    public static function nonResident(?array $party): bool
+    {
+        if (! $party) {
+            return false;
+        }
+        $country = strtoupper((string) ($party['country_code'] ?? 'CO'));
+
+        return ($country !== '' && $country !== 'CO') || in_array((string) ($party['id_type'] ?? ''), self::NON_RESIDENT_IDS, true);
+    }
 
     public function __construct(private readonly DianSetting $settings, private readonly Company $company) {}
 
@@ -65,16 +79,27 @@ class DocumentMapper
         $withholdings = DB::table('purchase_document_retentions')->where('purchase_document_id', $doc->id)->get();
 
         $supplier = $this->contactParty($doc->contact);
-        if ($supplier['id_type'] === '13') {
-            // DSAJ25a: el documento soporte solo admite al proveedor con NIT; el de una persona natural es su cedula + DV.
+        $foreign = self::nonResident($supplier);
+        if ($foreign && (strtoupper((string) ($supplier['country_code'] ?? 'CO')) === 'CO' || ! filled($supplier['city']))) {
+            $name = $supplier['name'] ?: 'El proveedor';
+            throw ValidationException::withMessages([
+                'contact_id' => "{$name} tiene identificación de no residente, pero sigue sin país y ciudad fuera de Colombia. Edita el tercero, elige el país y escribe la ciudad, y vuelve a enviar. La DIAN rechaza ese tipo de documento cuando el soporte se manda como proveedor residente (regla DSAJ25a).",
+            ]);
+        }
+        if (! $foreign && $supplier['id_type'] === '13') {
+            // DSAJ25a: el documento soporte de un residente solo admite NIT. El de una persona natural es su cédula más el DV.
             $supplier['id_type'] = '31';
             $supplier['dv'] = ColombianNit::resolveVerificationDigit($supplier['id'], $supplier['dv']);
         }
-        if (! filled($supplier['postal'])) {
+        if (! $foreign && ! filled($supplier['postal'])) {
             // DSAJ08a: el vendedor residente exige código postal. Sin uno, la DIAN acepta 000000.
             $supplier['postal'] = '000000';
         }
         $d = $this->document($doc->type, $doc, $type, 'ds', $supplier, $this->companyParty(), $items, $taxes, $related, 'purchase_document_item_id');
+        if ($foreign) {
+            // CustomizationID 11: vendedor no residente. Con 10 la DIAN exige schemeName 31 y rechaza el 50.
+            $d['customization'] = '11';
+        }
 
         return $this->withholdings($d, $withholdings);
     }
@@ -131,6 +156,7 @@ class DocumentMapper
             'due_date' => ($doc->due_date ?? $doc->date)->toDateString(),
             'environment' => $production ? '1' : '2',
             'currency' => $doc->currency ?: 'COP',
+            'exchange_rate' => (float) ($doc->exchange_rate ?? 1),
             'notes' => $doc->observations,
             'technical_key' => $production ? ($type?->technical_key ?? '') : ($type?->technical_key ?: self::TEST_TECHNICAL_KEY),
             'resolution' => [
@@ -201,16 +227,24 @@ class DocumentMapper
 
     public function contactParty(?Contact $c): array
     {
-        $place = $this->place($c?->municipality_code ?: $this->company->municipality_code);
+        $idType = (string) ($c?->identification_type ?: '13');
+        $country = strtoupper((string) ($c?->country_code ?: 'CO'));
+        $foreign = self::nonResident(['id_type' => $idType, 'country_code' => $country]);
+        $raw = trim((string) ($c?->identification ?? ''));
+        $id = $foreign ? ($raw !== '' ? $raw : '222222222222') : (preg_replace('/\D/', '', $raw) ?: '222222222222');
+        $muni = $foreign ? null : ($c?->municipality_code ?: $this->company->municipality_code);
+        $place = $this->place($muni);
         $responsibilities = $this->list($c?->fiscal_responsibilities);
 
         return [
-            'type' => $c?->person_type === 'juridica' ? '1' : '2', 'id_type' => (string) ($c?->identification_type ?: '13'),
-            'id' => preg_replace('/\D/', '', (string) ($c?->identification ?? '222222222222')), 'dv' => (string) ($c?->dv ?? ''),
+            'type' => $c?->person_type === 'juridica' ? '1' : '2', 'id_type' => $idType, 'id' => $id, 'dv' => (string) ($c?->dv ?? ''),
             'name' => $c?->name ?: 'Consumidor final', 'address' => $c?->address ?: 'Sin dirección',
-            'municipality_code' => $c?->municipality_code ?: $this->company->municipality_code, 'city' => $place['city'], 'department' => $place['department'],
-            'department_code' => $c?->department_code ?: substr((string) ($c?->municipality_code ?: $this->company->municipality_code), 0, 2),
-            'postal' => $c?->postal_code, 'email' => $c?->email, 'phone' => $c?->mobile ?: $c?->phone,
+            'municipality_code' => $muni, 'city' => $foreign ? trim((string) ($c?->foreign_city ?? '')) : $place['city'],
+            'department' => $foreign ? '' : $place['department'],
+            'department_code' => $foreign ? '' : ($c?->department_code ?: substr((string) $muni, 0, 2)),
+            'postal' => $foreign ? null : $c?->postal_code,
+            'country_code' => $country, 'country_name' => config('countries.'.$country) ?: ($country === 'CO' ? 'Colombia' : $country),
+            'email' => $c?->email, 'phone' => $c?->mobile ?: $c?->phone,
             'tax_level' => implode(';', $responsibilities ?: ['R-99-PN']),
             'tax_scheme' => $c?->vat_responsible ? ['01', 'IVA'] : ['ZZ', 'No aplica'],
             'registration_prefix' => null,

@@ -154,6 +154,12 @@ return [
         '49' => 'No responsable de IVA',
     ],
 
+    'currencies' => [
+        'COP' => 'Peso colombiano',
+        'USD' => 'Dólar estadounidense',
+        'EUR' => 'Euro',
+    ],
+
     /* Lineas de producto del modulo de deposito: el codigo del producto es linea + consecutivo de 4 o 5 digitos */
     'product_lines' => [
         '1' => 'Mascotas', '2' => 'Medicamentos', '3' => 'Peces', '4' => 'Cuyes', '5' => 'Cerdos',
