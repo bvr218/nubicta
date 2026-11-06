@@ -154,6 +154,7 @@ return [
             $item('Comprobantes contables', '/configuracion/documentos/comprobantes-contables'),
         ]],
         ['title' => 'Activos fijos', 'column' => 1, 'items' => [
+            $item('Activos Fijos', '/configuracion/activos-fijos/crear'),
             $item('Grupos de activos', '/configuracion/grupos-activos'),
         ]],
         ['title' => 'Importación', 'column' => 1, 'items' => [
