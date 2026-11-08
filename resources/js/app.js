@@ -13,7 +13,10 @@ for (const key of Object.keys(localStorage)) {
 }
 
 createInertiaApp({
-    title: (title) => (title ? `${title} - Nubicta` : 'Nubicta'),
+    title: (title) => {
+        const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+        return title ? `${title} - ${appName}` : appName;
+    },
     resolve: (name) => {
         const pages = import.meta.glob('./Pages/**/*.vue', { eager: true });
         const page = pages[`./Pages/${name}.vue`];

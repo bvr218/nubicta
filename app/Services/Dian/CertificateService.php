@@ -41,7 +41,7 @@ class CertificateService
         if ($nit === '' || ! str_contains(preg_replace('/\D+/', '', $subject) ?? '', $nit)) {
             $warnings[] = 'El NIT del certificado no coincide con el NIT de la empresa.';
         }
-        if (! preg_match('/CAMERFIRMA|CERTICAMARA|GSE|ANDES|THOMAS SIGNE|DIAN/i', $issuer)) {
+        if (! preg_match('/CAMERFIRMA|CERTICAMARA|GSE|ANDES|THOMAS SIGNE|OlimpiaIT|DIAN/i', $issuer)) {
             $warnings[] = 'El emisor no es una entidad de certificación reconocida por la DIAN.';
         }
 
