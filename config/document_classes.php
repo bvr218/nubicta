@@ -36,7 +36,7 @@ $mail = [
     ['key' => 'mail_subject', 'label' => 'Asunto', 'type' => 'text'],
     ['key' => 'mail_body', 'label' => 'Contenido', 'type' => 'textarea'],
 ];
-$columns = fn (string $who, array $available = null) => ['key' => 'print_columns', 'label' => "Datos que verá tu cliente en el detalle de $who", 'type' => 'columns', 'options' => $available ?? $saleColumns];
+$columns = fn (string $who, ?array $available = null) => ['key' => 'print_columns', 'label' => "Datos que verá tu cliente en el detalle de $who", 'type' => 'columns', 'options' => $available ?? $saleColumns];
 $charges = fn (string $doc) => ['title' => "Otros Cargos y descuentos en totales de $doc", 'fields' => [['key' => 'charges', 'label' => 'Cargos y descuentos', 'type' => 'charges']]];
 $codeColumns = [['key' => 'code', 'label' => 'Código del comprobante'], ['key' => 'name', 'label' => 'Descripción interna'], ['key' => 'title', 'label' => 'Título comprobante']];
 

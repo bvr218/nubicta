@@ -4,6 +4,7 @@ import { Head, Link, useForm } from '@inertiajs/vue3';
 
 const form = useForm({ email: '', password: '', remember: true });
 const showPassword = ref(false);
+const loginPhrase = import.meta.env.VITE_LOGIN_PHRASE || 'Gratis, de código abierto y con tus datos siempre bajo tu control.';
 
 function submit() {
     form.post('/login', { onFinish: () => form.reset('password') });
@@ -17,7 +18,7 @@ function submit() {
             <div class="max-w-[420px] px-10 text-white">
                 <img src="/brand/nubicta-logo-blanco.svg" alt="Nubicta" class="mb-10 w-[300px]" />
                 <p class="text-[40px] font-extrabold leading-tight">Tu facturación electrónica, contabilidad y nómina</p>
-                <p class="mt-4 text-[16px] opacity-90">Gratis, de código abierto y con tus datos siempre bajo tu control.</p>
+                <p class="mt-4 text-[16px] opacity-90">{{ loginPhrase }}</p>
             </div>
         </div>
         <div class="flex w-full flex-col items-center justify-center bg-[#f3f6f9] lg:w-1/2">
