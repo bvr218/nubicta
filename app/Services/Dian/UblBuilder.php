@@ -25,7 +25,7 @@ class UblBuilder
         'NC' => ['CreditNote', 'DIAN 2.1: Nota Crédito de Factura Electrónica de Venta', '20', '91'],
         'ND' => ['DebitNote', 'DIAN 2.1: Nota Débito de Factura Electrónica de Venta', '30', null],
         'DS' => ['Invoice', 'DIAN 2.1: documento soporte en adquisiciones efectuadas a no obligados a facturar.', '10', '05'],
-        'NA' => ['CreditNote', 'DIAN 2.1: Nota de ajuste al documento soporte en adquisiciones efectuadas a sujetos no obligados a expedir factura o documento equivalente.', '10', '95'],
+        'NA' => ['CreditNote', 'DIAN 2.1: Nota de ajuste al documento soporte en adquisiciones efectuadas a sujetos no obligados a expedir factura o documento equivalente', '10', '95'],
     ];
 
     public const TAX_CODES = ['IVA' => ['01', 'IVA'], 'Impoconsumo' => ['04', 'INC'], 'ICA' => ['03', 'ICA']];
@@ -104,7 +104,10 @@ class UblBuilder
         }
 
         $x .= $this->taxTotals($d['taxes'], 'TaxTotal', $d['currency']);
-        $x .= $this->taxTotals($d['withholdings'], 'WithholdingTaxTotal', $d['currency']);
+        // El esquema de la nota de ajuste no admite WithholdingTaxTotal ni en la cabecera ni en la línea.
+        if ($d['kind'] !== 'NA') {
+            $x .= $this->taxTotals($d['withholdings'], 'WithholdingTaxTotal', $d['currency']);
+        }
 
         $t = $d['totals'];
         $totalTag = $root === 'DebitNote' ? 'RequestedMonetaryTotal' : 'LegalMonetaryTotal';

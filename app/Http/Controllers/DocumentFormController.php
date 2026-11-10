@@ -170,7 +170,7 @@ class DocumentFormController extends Controller
         if (! $key) {
             return back()->with('error', 'Este documento no se puede editar; anúlalo y créalo de nuevo.');
         }
-        if ($reason = app(DocumentReverser::class)->blocker($doc)) {
+        if ($reason = app(DocumentReverser::class)->blocker($doc, true)) {
             return back()->with('error', $reason);
         }
         \Illuminate\Support\Facades\Gate::authorize(DocumentLocator::module($doc).'.editar');

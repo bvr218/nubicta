@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\DashboardController;
 use App\Models\Account;
 use App\Models\LedgerLine;
+use App\Models\Seller;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -35,7 +36,17 @@ class LedgerController extends Controller
             ->when($request->input('cuenta_desde'), fn ($q, $c) => $q->where('account_code', '>=', $c))
             ->when($request->input('cuenta_hasta'), fn ($q, $c) => $q->where('account_code', '<=', $c.'99999999'))
             ->when($request->input('tercero'), fn ($q, $t) => $q->where(fn ($w) => $w->where('identification', $t)->orWhere('contact_name', 'like', "%$t%")))
-            ->when($request->input('tipo'), fn ($q, $t) => $q->where('document_type', $t));
+            ->when($request->input('tipo'), fn ($q, $t) => $q->where('document_type', $t))
+            ->when($request->integer('vendedor'), fn ($q, $id) => $q->whereExists(function ($w) use ($id) {
+                $w->from('sales_documents as d')->whereColumn('d.company_id', 'ledger_lines.company_id')->whereColumn('d.name', 'ledger_lines.document')
+                    ->where(fn ($s) => $s->where('d.seller_id', $id)->orWhereExists(fn ($i) => $i->from('sales_document_items as i')->whereColumn('i.sales_document_id', 'd.id')->where('i.seller_id', $id)));
+            }));
+    }
+
+    /** Vendedor del comprobante de venta que originó la línea (encabezado o, si no tiene, el del ítem). */
+    private function sellerNameSql(): string
+    {
+        return "(select s.name from sales_documents d join sellers s on s.id = coalesce(d.seller_id, (select i.seller_id from sales_document_items i where i.sales_document_id = d.id and i.seller_id is not null order by i.position limit 1)) where d.company_id = ledger_lines.company_id and d.name = ledger_lines.document limit 1)";
     }
 
     private function names(): array
@@ -50,7 +61,8 @@ class LedgerController extends Controller
         return [
             'title' => $title,
             'tabs' => DashboardController::tabs('contabilidad'),
-            'filters' => [...$request->only('cuenta_desde', 'cuenta_hasta', 'tercero', 'tipo', 'nivel', 'por_tercero'), 'desde' => $from, 'hasta' => $to],
+            'filters' => [...$request->only('cuenta_desde', 'cuenta_hasta', 'tercero', 'tipo', 'nivel', 'por_tercero'), 'desde' => $from, 'hasta' => $to, 'vendedor' => $request->input('vendedor') ?: ''],
+            'sellers' => Seller::query()->orderBy('name')->get(['id', 'name']),
             'types' => LedgerLine::query()->distinct()->orderBy('document_type')->pluck('document_type'),
             'years' => LedgerLine::query()->selectRaw('MIN(YEAR(date)) a, MAX(YEAR(date)) b')->first(),
         ];
@@ -60,7 +72,8 @@ class LedgerController extends Controller
     {
         [$from, $to] = $this->range($request);
         $query = $this->filtered($request)->whereBetween('date', [$from, $to])
-            ->select('*')->selectRaw('SUM(debit - credit) OVER (PARTITION BY account_code, identification, branch ORDER BY date, id) AS running')
+            ->select('*')->selectRaw($this->sellerNameSql().' as seller')
+            ->selectRaw('SUM(debit - credit) OVER (PARTITION BY account_code, identification, branch ORDER BY date, id) AS running')
             ->orderBy('account_code')->orderBy('identification')->orderBy('date')->orderBy('id');
 
         $openings = fn (array $keys) => $keys ? $this->filtered($request)->where('date', '<', $from)
@@ -81,7 +94,7 @@ class LedgerController extends Controller
                 $seen[$key] = true;
 
                 return [
-                    'identification' => $l->identification, 'branch' => $l->branch, 'contact' => $l->contact_name,
+                    'identification' => $l->identification, 'branch' => $l->branch, 'contact' => $l->contact_name, 'seller' => $l->seller,
                     'code' => $l->account_code, 'account' => $names[$l->account_code] ?? '', 'document' => $l->document,
                     'date' => $l->date->format('d/m/Y'), 'opening' => $first ? $opening : null,
                     'debit' => (float) $l->debit, 'credit' => (float) $l->credit, 'balance' => $opening + (float) $l->running,
@@ -90,12 +103,13 @@ class LedgerController extends Controller
         };
 
         if ($format = $this->format($request)) {
-            $columns = [['Identificación', 'text'], ['Sucursal', 'text'], ['Nombre tercero', 'text'], ['Código cuenta contable', 'text'], ['Cuenta contable', 'text'],
+            $columns = [['Identificación', 'text'], ['Sucursal', 'text'], ['Nombre tercero', 'text'], ['Vendedor', 'text'], ['Código cuenta contable', 'text'], ['Cuenta contable', 'text'],
                 ['Comprobante', 'text'], ['Fecha elaboración', 'date'], ['Saldo inicial', 'money'], ['Débito', 'money'], ['Crédito', 'money'], ['Nuevo saldo', 'money']];
             $open = $this->filtered($request)->where('date', '<', $from)->groupBy('account_code', 'identification', 'branch')
                 ->selectRaw('account_code, identification, branch, SUM(debit - credit) AS bal')->toBase()->get()
                 ->mapWithKeys(fn ($r) => ["$r->account_code|$r->identification|$r->branch" => (float) $r->bal])->all();
             $lines = (clone $query)->reorder()->select('id', 'account_code', 'identification', 'branch', 'contact_name', 'document', 'date', 'debit', 'credit')
+                ->selectRaw($this->sellerNameSql().' as seller')
                 ->selectRaw('SUM(debit - credit) OVER (PARTITION BY account_code, identification, branch ORDER BY date, id) AS running')
                 ->orderBy('account_code')->orderBy('identification')->orderBy('date')->orderBy('id');
             $rows = function () use ($lines, $map, $open) {
@@ -106,7 +120,7 @@ class LedgerController extends Controller
             $t = $this->filtered($request)->whereBetween('date', [$from, $to])->selectRaw('SUM(debit) d, SUM(credit) c')->first();
 
             return $this->export($request, $format, 'libro_auxiliar', 'Movimiento auxiliar por cuenta contable', $columns, $rows(),
-                [null, null, null, null, null, null, null, null, (float) $t->d, (float) $t->c, null]);
+                [null, null, null, null, null, null, null, null, null, (float) $t->d, (float) $t->c, null]);
         }
 
         $page = $query->paginate($request->integer('per_page', 50))->withQueryString();
@@ -312,6 +326,7 @@ class LedgerController extends Controller
             'Fecha' => $d($from).' a '.$d($to),
             'Cuenta desde' => $request->input('cuenta_desde'), 'Cuenta hasta' => $request->input('cuenta_hasta'),
             'Tercero' => $request->input('tercero'), 'Tipo de comprobante' => $request->input('tipo'),
+            'Vendedor' => $request->integer('vendedor') ? Seller::query()->whereKey($request->integer('vendedor'))->value('name') : null,
             'Nivel' => $request->filled('nivel') ? (self::LEVEL_NAMES[(int) $request->input('nivel')] ?? null) : null,
         ], fn ($v) => filled($v));
         \Illuminate\Support\Facades\DB::table('report_exports')->insert([

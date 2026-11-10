@@ -17,12 +17,12 @@ const props = defineProps({
     priceListNames: { type: Array, required: true },
 });
 
-const f = reactive({ q: '', linea: '', grupo: '', tipo: '', estado: '', ...props.filters });
+const f = reactive({ q: '', linea: '', grupo: '', tipo: '', estado: '', saldo: '', ...props.filters });
 const panel = reactive({ ...f });
 const showFilters = ref(false);
 const menu = ref(null);
 const clean = () => Object.fromEntries(Object.entries(f).filter(([, v]) => v !== '' && v != null));
-const activeFilters = computed(() => ['linea', 'grupo', 'tipo', 'estado'].filter((k) => f[k]).length);
+const activeFilters = computed(() => ['linea', 'grupo', 'tipo', 'estado', 'saldo'].filter((k) => f[k]).length);
 function reload() {
     router.get('/productos', clean(), { preserveState: true, replace: true });
 }
@@ -32,12 +32,12 @@ function search() {
     t = setTimeout(reload, 350);
 }
 function applyFilters() {
-    Object.assign(f, { linea: panel.linea, grupo: panel.grupo, tipo: panel.tipo, estado: panel.estado });
+    Object.assign(f, { linea: panel.linea, grupo: panel.grupo, tipo: panel.tipo, estado: panel.estado, saldo: panel.saldo });
     showFilters.value = false;
     reload();
 }
 function clearFilters() {
-    Object.assign(panel, { linea: '', grupo: '', tipo: '', estado: '' });
+    Object.assign(panel, { linea: '', grupo: '', tipo: '', estado: '', saldo: '' });
     applyFilters();
 }
 const toggle = (key) => (menu.value = menu.value === key ? null : key);
@@ -96,10 +96,16 @@ const download = (base, f) => (window.location.href = base + (base.includes('?')
                         <option value="Service">Servicio</option>
                     </select>
                     <label class="s-label">Estado</label>
-                    <select v-model="panel.estado" class="s-input">
+                    <select v-model="panel.estado" class="s-input mb-[10px]">
                         <option value="">Todos</option>
                         <option value="activos">Activo</option>
                         <option value="inactivos">Inactivo</option>
+                    </select>
+                    <label class="s-label">Stock</label>
+                    <select v-model="panel.saldo" class="s-input">
+                        <option value="">Todos</option>
+                        <option value="negativo">En negativo</option>
+                        <option value="bajo_minimo">Bajo el mínimo</option>
                     </select>
                     <div class="mt-[14px] flex justify-between">
                         <button type="button" class="text-[13px] text-primary" @click="clearFilters">Limpiar filtros</button>

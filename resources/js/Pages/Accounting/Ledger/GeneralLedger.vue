@@ -4,7 +4,7 @@ import { Head } from '@inertiajs/vue3';
 import LedgerFilters from '../../../Components/LedgerFilters.vue';
 import EmptyState from '../../../Components/EmptyState.vue';
 
-const props = defineProps({ title: String, tabs: Array, filters: Object, types: Array, rows: Array });
+const props = defineProps({ title: String, tabs: Array, filters: Object, types: Array, sellers: Array, rows: Array });
 const money = (v) => (v ? Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00');
 const pos = (v) => Math.max(v, 0);
 const neg = (v) => Math.max(-v, 0);
@@ -18,7 +18,7 @@ const totals = computed(() => ({
 <template>
     <Head :title="title" />
     <h1 class="pt-[10px] text-[24px] text-primary">{{ title }}</h1>
-    <LedgerFilters url="/contabilidad/libro-mayor" :filters="filters" :fields="['cuentas', 'fechas']" />
+    <LedgerFilters url="/contabilidad/libro-mayor" :filters="filters" :sellers="sellers" :fields="['cuentas', 'fechas', 'vendedor']" />
 
     <section class="s-card mt-[14px]">
         <div class="s-table-wrap">

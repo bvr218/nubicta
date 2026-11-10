@@ -119,11 +119,14 @@ class DocumentMapper
             $gross = (float) $it->quantity * (float) $it->price - (float) $it->discount;
             $factor = $gross > 0 ? $base / $gross : 1;
             $lineTaxes = [];
+            $lineHold = [];
             foreach ($taxes->get($it->id, collect()) as $t) {
                 if ($code = UblBuilder::TAX_CODES[$t->type] ?? null) {
                     $lineTaxes[] = $docTaxes[] = ['code' => $code[0], 'name' => $code[1], 'percent' => (float) $t->percentage, 'base' => $base, 'amount' => (float) $t->value];
                 } elseif ($code = UblBuilder::WITHHOLDING_CODES[$t->type] ?? null) {
-                    $lineWithholdings[] = ['code' => $code[0], 'name' => $code[1], 'percent' => Tax::percent($t->type, $t->percentage), 'base' => $t->type === 'ReteIVA' ? (float) $it->tax_total : $base, 'amount' => (float) $t->value];
+                    $row = ['code' => $code[0], 'name' => $code[1], 'percent' => Tax::percent($t->type, $t->percentage), 'base' => $t->type === 'ReteIVA' ? (float) $it->tax_total : $base, 'amount' => (float) $t->value];
+                    $lineHold[] = $row;
+                    $lineWithholdings[] = $row;
                 }
             }
             if (($it->tax_code ?? null) === 'ZZ') {
@@ -136,6 +139,7 @@ class DocumentMapper
                 'unit' => ($it->product_id ?? null) ? ($units[$it->product_id] ?: '94') : '94',
                 'scheme_id' => $mandate ? ($role === 'mandante' ? '1' : '0') : null,
                 'provider' => $role === 'mandante' ? $provider : null,
+                'withholdings' => $lineHold,
             ];
         }
         $docTaxes = collect($docTaxes)->groupBy(fn ($t) => $t['code'].'|'.$t['percent'])

@@ -25,8 +25,11 @@ class DocumentReverser
 {
     public function __construct(private readonly InventoryService $inventory) {}
 
-    /** Motivo por el que no se puede anular/editar, o null si se puede. */
-    public function blocker(Model $doc): ?string
+    /**
+     * Motivo por el que no se puede anular o editar, o null si se puede.
+     * Un documento soporte ya aceptado por la DIAN se puede anular (reversa contabilidad y saldos); no se puede editar.
+     */
+    public function blocker(Model $doc, bool $editing = false): ?string
     {
         if (($doc->source ?? 'erp') !== 'erp') {
             return 'Los documentos importados de Siigo son de solo consulta.';
@@ -45,7 +48,12 @@ class DocumentReverser
         if ($doc instanceof JournalEntry && in_array($doc->source_type, ['payroll', 'payroll_payment'], true)) {
             return 'Comprobante generado por la nómina: para corregirlo reabre la nómina desde Nómina > Nóminas.';
         }
-        if (($doc instanceof SalesDocument || $doc instanceof PurchaseDocument) && $doc->dian_status === 'Accepted') {
+        if (($doc instanceof SalesDocument || $doc instanceof PurchaseDocument) && $doc->dian_status === 'Accepted'
+            && ! ($doc instanceof PurchaseDocument && $doc->type === 'DS' && ! $editing)) {
+            if ($doc instanceof PurchaseDocument && $doc->type === 'NA') {
+                return 'La DIAN ya aceptó esta nota de ajuste. No se puede editar ni anular.';
+            }
+
             return 'La DIAN ya aceptó este documento electrónico: para reversarlo elabora una nota '.($doc instanceof SalesDocument ? 'crédito' : 'de ajuste').'.';
         }
         if ($doc instanceof SalesDocument || $doc instanceof PurchaseDocument) {
@@ -82,20 +90,85 @@ class DocumentReverser
         return null;
     }
 
-    public function annul(Model $doc): void
+    /** Anula el documento. Si es un documento soporte aceptado por la DIAN, deja la nota de ajuste y devuelve su número. */
+    public function annul(Model $doc): ?string
     {
+        $adjustment = $doc instanceof PurchaseDocument && $doc->type === 'DS' && $doc->dian_status === 'Accepted';
         $this->guard($doc);
         DB::transaction(function () use ($doc) {
             $this->reverse($doc, 'Anulación');
             $doc->forceFill(['status' => 'annulled', 'annulled_at' => now(), 'annulled_by' => Auth::id()]
                 + (array_key_exists('balance', $doc->getAttributes()) ? ['balance' => 0] : []))->save();
         });
+        if (! $adjustment) {
+            return null;
+        }
+        $note = $this->supportAdjustment($doc->fresh());
+        if ($note->dian_status && $note->dian_status !== 'Accepted') {
+            app(\App\Http\Controllers\DocumentFormController::class)->emit($note);
+        }
+
+        return $note->fresh()->name;
+    }
+
+    /** Nota de ajuste del documento soporte. La anulación ya reversó contabilidad e inventario, así que la nota no los vuelve a mover. */
+    public function supportAdjustment(PurchaseDocument $doc): PurchaseDocument
+    {
+        $existing = PurchaseDocument::query()->where('type', 'NA')->where('related_document_id', $doc->id)->where('status', '!=', 'annulled')->first();
+        if ($existing) {
+            return $existing;
+        }
+        $type = DocumentType::query()->where('type', 'NA')->where('active', true)->orderBy('code')->first()
+            ?? DocumentType::create(['company_id' => $doc->company_id, 'type' => 'NA', 'code' => '1', 'name' => 'Nota de ajuste documento soporte', 'consecutive' => 1, 'automatic_number' => true, 'electronic_type' => 'SupportDocumentAdjustment', 'active' => true]);
+
+        return DB::transaction(function () use ($doc, $type) {
+            [$number, $name] = app(Numbering::class)->take($type, 'purchase_documents');
+            $note = PurchaseDocument::create([
+                'company_id' => $doc->company_id, 'source' => 'erp', 'type' => 'NA', 'document_type_id' => $type->id,
+                'number' => $number, 'name' => $name, 'date' => now()->toDateString(), 'due_date' => now()->toDateString(),
+                'contact_id' => $doc->contact_id, 'supplier_prefix' => $doc->supplier_prefix, 'supplier_number' => $doc->supplier_number,
+                'cost_center_id' => $doc->cost_center_id, 'related_document_id' => $doc->id, 'related_name' => $doc->name,
+                'currency' => $doc->currency ?: 'COP', 'exchange_rate' => $doc->exchange_rate ?: 1,
+                'subtotal' => $doc->subtotal, 'discount' => $doc->discount, 'tax_total' => $doc->tax_total,
+                'withholding_total' => $doc->withholding_total, 'total' => $doc->total, 'balance' => 0,
+                'observations' => "Nota de ajuste por anulación de {$doc->name}.", 'status' => 'issued',
+                'dian_status' => $type->isElectronic() ? 'Draft' : null, 'created_by' => Auth::id(),
+            ]);
+            foreach (DB::table('purchase_document_items')->where('purchase_document_id', $doc->id)->orderBy('position')->get() as $item) {
+                $newId = DB::table('purchase_document_items')->insertGetId([
+                    'purchase_document_id' => $note->id, 'position' => $item->position, 'item_type' => $item->item_type,
+                    'product_id' => $item->product_id, 'account_id' => $item->account_id, 'code' => $item->code, 'description' => $item->description,
+                    'warehouse_id' => $item->warehouse_id, 'quantity' => $item->quantity, 'price' => $item->price, 'discount' => $item->discount,
+                    'subtotal' => $item->subtotal, 'tax_total' => $item->tax_total, 'total' => $item->total, 'tax_percentage' => $item->tax_percentage,
+                ]);
+                foreach (DB::table('purchase_document_item_taxes')->where('purchase_document_item_id', $item->id)->get() as $tax) {
+                    DB::table('purchase_document_item_taxes')->insert([
+                        'purchase_document_item_id' => $newId, 'tax_id' => $tax->tax_id, 'name' => $tax->name,
+                        'type' => $tax->type, 'percentage' => $tax->percentage, 'value' => $tax->value,
+                    ]);
+                }
+            }
+            foreach (DB::table('purchase_document_retentions')->where('purchase_document_id', $doc->id)->get() as $r) {
+                DB::table('purchase_document_retentions')->insert([
+                    'purchase_document_id' => $note->id, 'tax_id' => $r->tax_id, 'name' => $r->name, 'type' => $r->type,
+                    'percentage' => $r->percentage, 'base' => $r->base, 'value' => $r->value,
+                ]);
+            }
+            foreach (DB::table('purchase_document_payments')->where('purchase_document_id', $doc->id)->get() as $p) {
+                DB::table('purchase_document_payments')->insert([
+                    'purchase_document_id' => $note->id, 'payment_method_id' => $p->payment_method_id, 'name' => $p->name,
+                    'value' => $p->value, 'due_date' => $p->due_date,
+                ]);
+            }
+
+            return $note;
+        });
     }
 
     /** Reversa efectos y borra el documento para registrarlo de nuevo con el mismo numero. */
     public function prepareEdit(Model $doc): array
     {
-        $this->guard($doc);
+        $this->guard($doc, true);
         $this->reverse($doc, 'Edición');
         $keep = [$doc->number, $doc->name];
         match (true) {
@@ -109,9 +182,9 @@ class DocumentReverser
         return $keep;
     }
 
-    private function guard(Model $doc): void
+    private function guard(Model $doc, bool $editing = false): void
     {
-        if ($reason = $this->blocker($doc)) {
+        if ($reason = $this->blocker($doc, $editing)) {
             throw ValidationException::withMessages(['items' => $reason]);
         }
         try {

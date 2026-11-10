@@ -86,6 +86,10 @@ const phones = [c.phone, c.phone2].filter(Boolean).filter((p, i, a) => a.indexOf
                 <tr class="b"><td>Total a Pagar</td><td class="r">{{ money(d.totals.total) }}</td></tr>
             </table>
         </div>
+        <div v-if="d.dian?.cufe || d.related_cuds" class="codes">
+            <p v-if="d.dian?.cufe"><b>{{ d.type === 'DS' || d.type === 'NA' ? 'CUDS' : 'CUDE' }}:</b> {{ d.dian.cufe }}</p>
+            <p v-if="d.related_cuds"><b>CUDS documento soporte:</b> {{ d.related_cuds }}</p>
+        </div>
     </article>
 </template>
 
@@ -127,5 +131,7 @@ table { border-collapse: collapse; }
 .sums { width: 320px; align-self: flex-start; }
 .sums td { border: 1px solid #ddd; padding: 3px 6px; }
 .sums .b td { background: #eee; font-weight: bold; }
+.codes { margin-top: 16px; word-break: break-all; }
+.codes p { margin: 2px 0; }
 @media print { .psheet { padding: 10px; } }
 </style>

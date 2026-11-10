@@ -118,7 +118,7 @@ class DocumentLocator
         return $header + $body + [
             'ledger' => $seeLedger ? $ledger : [], 'show_ledger' => $seeLedger, 'show_costs' => $seeCosts, 'movements' => $movements,
             'blocker' => $reverser->blocker($doc),
-            'editable' => DocumentReverser::formKey($doc) !== null,
+            'editable' => DocumentReverser::formKey($doc) !== null && $reverser->blocker($doc, true) === null,
             'copy_url' => ($key = DocumentReverser::formKey($doc)) ? '/'.$key.'?copiar='.self::kind($doc).':'.$doc->id : null,
             'favorite' => $doc instanceof JournalEntry ? (bool) $doc->favorite : null,
             'mailable' => $doc instanceof SalesDocument,
@@ -198,6 +198,9 @@ class DocumentLocator
             'cost_center' => $doc->cost_center_id ? DB::table('cost_centers')->where('id', $doc->cost_center_id)->value('name') : null,
             'words' => self::words((float) $doc->total),
             'debt' => $doc->contact_id ? (float) DB::table('purchase_documents')->where('company_id', $doc->company_id)->where('contact_id', $doc->contact_id)->where('status', '!=', 'annulled')->sum('balance') : null,
+            'adjustments' => DB::table('purchase_documents')->where('related_document_id', $doc->id)->where('type', 'NA')->where('status', '!=', 'annulled')->orderBy('id')->get(['id', 'name'])
+                ->map(fn ($n) => ['name' => $n->name, 'url' => "/documentos/compras/{$n->id}"])->all(),
+            'related_cuds' => $doc->related_document_id ? DB::table('purchase_documents')->where('id', $doc->related_document_id)->value('cuds') : null,
             'statement' => ['total' => (float) $doc->total, 'balance' => $balance, 'overdue' => $overdue ? $balance : 0.0, 'pending' => $overdue ? 0.0 : $balance],
         ];
     }

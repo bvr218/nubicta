@@ -4,14 +4,14 @@ import LedgerFilters from '../../../Components/LedgerFilters.vue';
 import Pager from '../../../Components/Pager.vue';
 import EmptyState from '../../../Components/EmptyState.vue';
 
-defineProps({ title: String, tabs: Array, filters: Object, types: Array, lines: Object, totals: Object });
+defineProps({ title: String, tabs: Array, filters: Object, types: Array, sellers: Array, lines: Object, totals: Object });
 const money = (v) => Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 </script>
 
 <template>
     <Head :title="title" />
     <h1 class="pt-[10px] text-[24px] text-primary">{{ title }}</h1>
-    <LedgerFilters url="/contabilidad/libro-diario" :filters="filters" :types="types" :fields="['cuentas', 'fechas', 'tipo']" />
+    <LedgerFilters url="/contabilidad/libro-diario" :filters="filters" :types="types" :sellers="sellers" :fields="['cuentas', 'fechas', 'tipo', 'vendedor']" />
 
     <section class="s-card mt-[14px]">
         <div class="s-table-wrap">

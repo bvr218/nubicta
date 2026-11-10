@@ -21,7 +21,8 @@ const ledgerTotal = (k) => d.ledger.reduce((a, l) => a + l[k], 0);
 
 async function annul() {
     menu.value = false;
-    if (await confirmDialog(`¿Anular el documento ${d.name}? Se reversará su contabilización, inventario y saldos.`)) router.post(`/documentos/${d.kind}/${d.id}/anular`, {}, { preserveScroll: true, preserveState: false });
+    const dian = d.type === 'DS' && d.dian?.status === 'Accepted' ? ' La DIAN ya lo aceptó: el documento electrónico sigue vigente ante la DIAN.' : '';
+    if (await confirmDialog(`¿Anular el documento ${d.name}? Se reversará su contabilización, inventario y saldos.${dian}`)) router.post(`/documentos/${d.kind}/${d.id}/anular`, {}, { preserveScroll: true, preserveState: false });
 }
 function upload(e) {
     const file = e.target.files?.[0];
@@ -53,7 +54,7 @@ function upload(e) {
 
         <div v-if="annulled" class="mt-[12px] rounded-[2px] border border-[#e57373] bg-[#fdecea] px-4 py-2 text-[12px] text-[#c62828]">Documento anulado<span v-if="d.annulled_at"> el {{ d.annulled_at }}</span>.</div>
         <div v-else-if="d.blocker && d.source === 'erp'" class="mt-[12px] rounded-[2px] border border-[#ffcc80] bg-[#fff8e1] px-4 py-2 text-[12px] text-[#8d6e00]">{{ d.blocker }}</div>
-        <div v-if="d.dian && d.dian.status !== 'Accepted'" class="mt-[12px] rounded-[2px] border border-[#ffcc80] bg-[#fff8e1] px-4 py-2 text-[12px] text-[#8d6e00]">{{ d.dian.message || 'El documento soporte está pendiente de aprobación de la DIAN.' }}</div>
+        <div v-if="d.dian && d.dian.status !== 'Accepted'" class="mt-[12px] rounded-[2px] border border-[#ffcc80] bg-[#fff8e1] px-4 py-2 text-[12px] text-[#8d6e00]">{{ d.dian.message || (d.type === 'NA' ? 'La nota de ajuste está pendiente de aprobación de la DIAN.' : 'El documento soporte está pendiente de aprobación de la DIAN.') }}</div>
         <div v-if="error" class="mt-[12px] rounded-[2px] border border-[#e57373] bg-[#fdecea] px-4 py-2 text-[12px] text-[#c62828]">{{ error }}</div>
 
         <div class="mt-[14px] rounded-[4px] bg-white p-[10px]">
@@ -81,7 +82,12 @@ function upload(e) {
                     <dt>Deuda total proveedor</dt>
                     <dd><Link v-if="d.contact_id" :href="`/compras/proveedores/${d.contact_id}`" class="text-primary hover:underline">$ {{ money(d.debt) }}</Link></dd>
                     <dt>Comprobantes relacionados</dt>
-                    <dd><Link v-if="d.related_url" :href="d.related_url" class="text-primary hover:underline">{{ d.related }}</Link><span v-else>{{ d.related }}</span></dd>
+                    <dd>
+                        <Link v-if="d.related_url" :href="d.related_url" class="text-primary hover:underline">{{ d.related }}</Link>
+                        <span v-else-if="d.related">{{ d.related }}</span>
+                        <Link v-for="n in d.adjustments || []" :key="n.url" :href="n.url" class="block text-primary hover:underline">{{ n.name }}</Link>
+                        <span v-if="!d.related && !(d.adjustments || []).length">—</span>
+                    </dd>
                 </dl>
             </section>
             <section class="min-h-[160px] rounded-[4px] bg-white p-[16px]">

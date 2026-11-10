@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Sales;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\DashboardController;
 use App\Models\SalesDocument;
+use App\Models\Seller;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -23,6 +24,7 @@ class SalesDocumentController extends Controller
             ->when($request->input('desde'), fn ($q, $d) => $q->whereDate('date', '>=', $d))
             ->when($request->input('hasta'), fn ($q, $d) => $q->whereDate('date', '<=', $d))
             ->when($request->input('saldo') === 'pendiente', fn ($q) => $q->where('balance', '>', 0))
+            ->when($request->integer('vendedor'), fn ($q, $id) => $q->where(fn ($w) => $w->where('seller_id', $id)->orWhereHas('items', fn ($i) => $i->where('seller_id', $id))))
             ->orderByDesc('date')->orderByDesc('number')
             ->paginate($request->integer('per_page', 20))
             ->withQueryString()
@@ -48,7 +50,8 @@ class SalesDocumentController extends Controller
         return Inertia::render('Sales/Index', [
             'documents' => $docs,
             'tabs' => DashboardController::tabs('ventas'),
-            'filters' => $request->only('q', 'tipo', 'desde', 'hasta', 'saldo'),
+            'filters' => [...$request->only('q', 'tipo', 'desde', 'hasta', 'saldo'), 'vendedor' => $request->input('vendedor') ?: ''],
+            'sellers' => Seller::query()->orderBy('name')->get(['id', 'name']),
         ]);
     }
 }

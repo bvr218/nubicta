@@ -51,7 +51,10 @@ class ProductController extends Controller
             'products' => $products,
             'tabs' => DashboardController::tabs('productos'),
             'priceListNames' => $lists->pluck('name'),
-            'filters' => $request->only('q', 'linea', 'grupo', 'tipo', 'estado', 'orden'),
+            'filters' => [
+                ...$request->only('q', 'linea', 'grupo', 'tipo', 'estado', 'orden'),
+                'saldo' => $request->input('saldo') ?: ($request->boolean('bajo_minimo') ? 'bajo_minimo' : ''),
+            ],
             'lines' => ProductLine::orderByRaw('CAST(code AS UNSIGNED)')->get(['id', 'code', 'name']),
             'groups' => AccountGroup::orderBy('name')->get(['id', 'name']),
         ]);
@@ -258,7 +261,8 @@ class ProductController extends Controller
             ->when($request->input('tipo'), fn ($q, $v) => $q->where('type', $v))
             ->when($request->input('estado') === 'activos', fn ($q) => $q->where('active', true))
             ->when($request->input('estado') === 'inactivos', fn ($q) => $q->where('active', false))
-            ->when($request->boolean('bajo_minimo'), fn ($q) => $q->where('stock_control', true)->where('min_stock', '>', 0)->whereColumn('stock', '<', 'min_stock'));
+            ->when($request->input('saldo') === 'negativo', fn ($q) => $q->where('stock_control', true)->where('stock', '<', 0))
+            ->when($request->input('saldo') === 'bajo_minimo' || $request->boolean('bajo_minimo'), fn ($q) => $q->where('stock_control', true)->where('min_stock', '>', 0)->whereColumn('stock', '<', 'min_stock'));
     }
 
     private function payload(Product $product): array

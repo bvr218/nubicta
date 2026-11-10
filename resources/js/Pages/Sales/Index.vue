@@ -10,10 +10,11 @@ const props = defineProps({
     documents: { type: Object, required: true },
     tabs: { type: Array, required: true },
     filters: { type: Object, default: () => ({}) },
+    sellers: { type: Array, default: () => [] },
 });
 
-const f = reactive({ q: '', tipo: '', desde: '', hasta: '', saldo: '', ...props.filters });
-const showFilters = ref(!!(f.tipo || f.desde || f.hasta || f.saldo));
+const f = reactive({ q: '', tipo: '', desde: '', hasta: '', saldo: '', vendedor: '', ...props.filters });
+const showFilters = ref(!!(f.tipo || f.desde || f.hasta || f.saldo || f.vendedor));
 function reload() {
     router.get('/ventas', Object.fromEntries(Object.entries(f).filter(([, v]) => v)), { preserveState: true, replace: true });
 }
@@ -86,6 +87,9 @@ function send() {
             <label><span class="s-label">Hasta</span><input v-model="f.hasta" type="date" class="s-input w-[150px]" @change="reload" /></label>
             <label><span class="s-label">Saldo</span>
                 <select v-model="f.saldo" class="s-input w-[150px]" @change="reload"><option value="">Todos</option><option value="pendiente">Con saldo pendiente</option></select>
+            </label>
+            <label><span class="s-label">Vendedor</span>
+                <select v-model="f.vendedor" class="s-input w-[180px]" @change="reload"><option value="">Todos</option><option v-for="s in sellers" :key="s.id" :value="String(s.id)">{{ s.name }}</option></select>
             </label>
         </div>
 

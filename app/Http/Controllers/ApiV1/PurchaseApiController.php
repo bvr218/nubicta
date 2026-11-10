@@ -58,7 +58,7 @@ class PurchaseApiController extends ApiBaseController
     {
         $this->authorizeApi('compras.editar');
         $current = $this->find($clase, $id);
-        if ($reason = app(DocumentReverser::class)->blocker($current)) {
+        if ($reason = app(DocumentReverser::class)->blocker($current, true)) {
             return response()->json(['message' => $reason], 409);
         }
         [$doc, $dian] = $this->save($request, $clase, $current);

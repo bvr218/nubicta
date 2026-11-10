@@ -168,10 +168,13 @@ function link(k, r) {
     if (!tpl) return null;
     if (tpl.startsWith('@')) return r[tpl.slice(1)] || null;
     let missing = false;
-    const url = tpl.replace(/\{(\w+)\}/g, (_, key) => {
-        const v = key === 'from' ? f.desde : key === 'to' ? f.hasta : r[key];
-        if (v === null || v === undefined || v === '') missing = true;
-        return encodeURIComponent(v ?? '');
+    const url = tpl.replace(/\{(\??)(\w+)\}/g, (_, optional, key) => {
+        const v = key === 'from' ? f.desde : key === 'to' ? f.hasta : key === 'seller' ? f.vendedor : r[key];
+        if (v === null || v === undefined || v === '') {
+            if (!optional) missing = true;
+            return '';
+        }
+        return encodeURIComponent(v);
     });
     return missing ? null : url;
 }

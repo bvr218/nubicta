@@ -9,6 +9,7 @@ const props = defineProps({
     filters: { type: Object, default: () => ({}) },
     fields: { type: Array, default: () => ['cuentas', 'tercero', 'fechas'] },
     types: { type: Array, default: () => [] },
+    sellers: { type: Array, default: () => [] },
 });
 
 const ACCOUNT_COLUMNS = [['code', 'Código'], ['name', 'Nombre'], ['category', 'Categoría']];
@@ -49,6 +50,13 @@ const clear = () => router.get(props.url);
             <select v-model="f.tipo" class="s-input w-[160px]">
                 <option :value="undefined">Todos</option>
                 <option v-for="t in types" :key="t" :value="t">{{ t }}</option>
+            </select>
+        </div>
+        <div v-if="fields.includes('vendedor')" class="flex items-center gap-[10px]">
+            <span class="w-[130px] text-right">Vendedor</span>
+            <select v-model="f.vendedor" class="s-input w-[310px]">
+                <option value="">Todos</option>
+                <option v-for="s in sellers" :key="s.id" :value="String(s.id)">{{ s.name }}</option>
             </select>
         </div>
         <slot :f="f" />

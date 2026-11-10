@@ -3,14 +3,14 @@ import { Head } from '@inertiajs/vue3';
 import LedgerFilters from '../../../Components/LedgerFilters.vue';
 import EmptyState from '../../../Components/EmptyState.vue';
 
-defineProps({ title: String, tabs: Array, filters: Object, types: Array, rows: Array, levels: Object, totals: Object });
+defineProps({ title: String, tabs: Array, filters: Object, types: Array, sellers: Array, rows: Array, levels: Object, totals: Object });
 const money = (v) => Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 </script>
 
 <template>
     <Head :title="title" />
     <h1 class="pt-[10px] text-[24px] text-primary">{{ title }}</h1>
-    <LedgerFilters url="/contabilidad/balance-prueba" :filters="filters" :fields="['cuentas', 'fechas', 'tercero']">
+    <LedgerFilters url="/contabilidad/balance-prueba" :filters="filters" :sellers="sellers" :fields="['cuentas', 'fechas', 'tercero', 'vendedor']">
         <template #default="{ f }">
             <div class="flex items-center gap-[10px]">
                 <span class="w-[130px] text-right">Nivel</span>

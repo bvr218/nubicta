@@ -32,13 +32,29 @@ final class ReportRegistry
                     ->groupBy('c.id', 'c.identification', 'c.dv', 'c.branch_office', 'c.name')->orderByRaw('cast(c.identification as unsigned)'),
             ],
             'ventas-producto' => [
-                'title' => 'Ventas por producto', 'filters' => ['product', 'nc', 'range', 'group'], 'primary' => ['product'],
+                'title' => 'Ventas por producto', 'filters' => ['product', 'seller', 'nc', 'range', 'group'], 'primary' => ['product'],
                 'columns' => ['codigo' => ['Código producto', 'text'], 'producto' => ['Nombre producto', 'text'], 'referencia' => ['Referencia fábrica', 'text'], 'grupo' => ['Grupo inventario', 'text'],
                     'cantidad' => ['Cantidad vendida', 'qty'], ...self::salesValueColumns('Descuento'), 'total' => ['Total', 'money']],
                 'totals' => ['cantidad', 'bruto', 'descuento', 'subtotal', 'cargo', 'retencion', 'total'],
-                'query' => fn ($f) => self::salesLines($f)
-                    ->selectRaw('i.code codigo, coalesce(max(p.name), max(i.description)) producto, max(p.reference) referencia, max(ag.name) grupo, '.self::salesItemSums())
+                'links' => ['cantidad' => '/reportes/ventas-producto-facturas?producto={product_id}&desde={from}&hasta={to}&nc={nc}&vendedor={?seller}'],
+                'query' => fn ($f) => self::salesLines($f, 'coalesce(i.seller_id, d.seller_id)')
+                    ->selectRaw('max(i.product_id) product_id, '.(($f['nc'] ?? true) ? '1' : '0').' nc, i.code codigo, coalesce(max(p.name), max(i.description)) producto, max(p.reference) referencia, max(ag.name) grupo, '.self::salesItemSums())
                     ->groupBy('i.code')->orderByRaw('cast(i.code as unsigned), i.code'),
+            ],
+            'ventas-producto-facturas' => [
+                'title' => 'Facturas del producto', 'filters' => ['product', 'seller', 'nc', 'range'], 'primary' => ['product'],
+                'note' => 'Comprobantes que incluyen este producto en el periodo. Abre el comprobante para anularlo, editarlo o consultar la venta.',
+                'columns' => ['fecha' => ['Fecha', 'date'], 'documento' => ['Comprobante', 'text'], 'tipo' => ['Tipo', 'text'], 'cliente' => ['Cliente', 'text'], 'vendedor' => ['Vendedor', 'text'],
+                    'cantidad' => ['Cantidad', 'qty'], ...self::salesValueColumns('Descuento'), 'total' => ['Total', 'money']],
+                'totals' => ['cantidad', 'bruto', 'descuento', 'subtotal', 'cargo', 'retencion', 'total'],
+                'links' => ['documento' => '/documentos/ventas/{doc_id}'],
+                'query' => fn ($f) => self::salesLines($f, 'coalesce(i.seller_id, d.seller_id)')
+                    ->when(! ($f['product'] ?? null), fn ($q) => $q->whereRaw('1 = 0'))
+                    ->join('contacts as c', 'c.id', '=', 'd.contact_id')
+                    ->leftJoin('sellers as sv', 'sv.id', '=', DB::raw('coalesce(i.seller_id, d.seller_id)'))
+                    ->selectRaw("d.id doc_id, d.date fecha, d.name documento, case d.type when 'FV' then 'Factura de venta' when 'NC' then 'Nota crédito' when 'ND' then 'Nota débito' else d.type end tipo, c.name cliente, max(sv.name) vendedor, ".self::salesItemSums())
+                    ->groupBy('d.id', 'd.date', 'd.number', 'd.name', 'd.type', 'c.id', 'c.name')
+                    ->orderBy('d.date')->orderBy('d.number'),
             ],
             'ventas-vendedor' => [
                 'title' => 'Ventas por vendedor', 'filters' => ['seller', 'contact', 'range', 'nc'], 'primary' => ['seller'],
@@ -50,12 +66,12 @@ final class ReportRegistry
                     ->groupBy('s.id', 's.identification', 's.name')->orderBy('vendedor'),
             ],
             'ventas-cliente-producto' => [
-                'title' => 'Ventas por cliente por producto', 'filters' => ['contact', 'product', 'group', 'range', 'nc'], 'primary' => ['contact'],
+                'title' => 'Ventas por cliente por producto', 'filters' => ['contact', 'product', 'seller', 'group', 'range', 'nc'], 'primary' => ['contact'],
                 'columns' => ['ident' => ['Identificación', 'text'], 'sucursal' => ['Sucursal', 'text'], 'cliente' => ['Cliente', 'text'], 'codigo' => ['Código producto', 'text'],
                     'producto' => ['Nombre producto', 'text'], 'referencia' => ['Referencia fábrica', 'text'], 'grupo' => ['Grupo inventario', 'text'],
                     'cantidad' => ['Cantidad vendida', 'qty'], ...self::salesValueColumns('Descuento'), 'total' => ['Total', 'money']],
                 'totals' => ['cantidad', 'bruto', 'descuento', 'subtotal', 'cargo', 'retencion', 'total'],
-                'query' => fn ($f) => self::salesLines($f)->join('contacts as c', 'c.id', '=', 'd.contact_id')
+                'query' => fn ($f) => self::salesLines($f, 'coalesce(i.seller_id, d.seller_id)')->join('contacts as c', 'c.id', '=', 'd.contact_id')
                     ->selectRaw(self::ident('c').' ident, '.self::branch('c').' sucursal, c.name cliente, i.code codigo, coalesce(max(p.name), max(i.description)) producto, max(p.reference) referencia, max(ag.name) grupo, '.self::salesItemSums())
                     ->groupBy('c.id', 'c.identification', 'c.dv', 'c.branch_office', 'c.name', 'i.code')->orderByRaw('cast(c.identification as unsigned)')->orderByRaw('cast(i.code as unsigned), i.code'),
             ],
@@ -69,14 +85,14 @@ final class ReportRegistry
                     ->groupBy('s.id', 's.name', 'i.code')->orderBy('vendedor')->orderByRaw('cast(i.code as unsigned), i.code'),
             ],
             'movimiento-facturas-venta' => [
-                'title' => 'Movimiento ventas y compras', 'filters' => ['kind', 'contact', 'cost_center', 'range', 'creator'], 'primary' => ['contact'],
+                'title' => 'Movimiento ventas y compras', 'filters' => ['kind', 'contact', 'seller', 'cost_center', 'range', 'creator'], 'primary' => ['contact'],
                 'labels' => ['contact' => 'Tercero'], 'kinds' => self::MOVEMENT_KINDS,
                 'columns' => self::movementColumns(true),
                 'totals' => ['cantidad', 'unitario', 'descuento', 'aiu', 'cargo1', 'cargo2', 'retencion', 'cargos', 'descuentos_totales', 'total'],
                 'query' => fn ($f) => self::movement($f, $f['kind'] ? [$f['kind']] : array_keys(self::MOVEMENT_KINDS)),
             ],
             'movimiento-notas-venta' => [
-                'title' => 'Movimiento de notas débito, crédito y nota débito (Ventas)', 'filters' => ['contact', 'cost_center', 'range', 'creator'], 'primary' => ['contact'],
+                'title' => 'Movimiento de notas débito, crédito y nota débito (Ventas)', 'filters' => ['contact', 'seller', 'cost_center', 'range', 'creator'], 'primary' => ['contact'],
                 'labels' => ['contact' => 'Tercero'],
                 'columns' => self::movementColumns(false),
                 'totals' => ['cantidad', 'unitario', 'descuento', 'aiu', 'cargo1', 'cargo2', 'retencion', 'cargos', 'descuentos_totales', 'total'],
@@ -125,7 +141,7 @@ final class ReportRegistry
                 },
             ],
             'ventas-centro-costo' => [
-                'title' => 'Ventas por centro de costo', 'filters' => ['cost_center', 'contact', 'range', 'nc'], 'primary' => ['cost_center'],
+                'title' => 'Ventas por centro de costo', 'filters' => ['cost_center', 'seller', 'contact', 'range', 'nc'], 'primary' => ['cost_center'],
                 'columns' => ['codigo' => ['Código centro de costo', 'text'], 'centro' => ['Centro de costo', 'text'], 'documentos' => ['Número de comprobantes', 'count'],
                     ...self::salesValueColumns('Descuento'), 'cargos' => ['Cargo en totales', 'money'], 'descuentos_totales' => ['Descuento en totales', 'money'], 'total' => ['Total', 'money']],
                 'totals' => ['bruto', 'descuento', 'subtotal', 'cargo', 'retencion', 'cargos', 'descuentos_totales', 'total'],
@@ -597,15 +613,17 @@ final class ReportRegistry
                 },
             ],
             'comprobantes-detallados' => [
-                'title' => 'Comprobantes detallados', 'filters' => ['range', 'doctype', 'account'], 'column_picker' => true,
+                'title' => 'Comprobantes detallados', 'filters' => ['range', 'doctype', 'account', 'seller'], 'column_picker' => true,
                 'columns' => ['documento' => ['Comprobante', 'text'], 'secuencia' => ['Secuencia', 'int'], 'fecha' => ['Fecha elaboración', 'date'], 'cuenta' => ['Código contable', 'text'],
-                    'nombre_cuenta' => ['Cuenta contable', 'text'], 'ident' => ['Identificación', 'text'], 'sucursal' => ['Sucursal', 'text'], 'tercero' => ['Nombre tercero', 'text'],
+                    'nombre_cuenta' => ['Cuenta contable', 'text'], 'ident' => ['Identificación', 'text'], 'sucursal' => ['Sucursal', 'text'], 'tercero' => ['Nombre tercero', 'text'], 'vendedor' => ['Vendedor', 'text'],
                     'descripcion' => ['Descripción', 'text'], 'detalle' => ['Detalle', 'text'], 'centro' => ['Centro de costo', 'text'], 'debito' => ['Débito', 'money'], 'credito' => ['Crédito', 'money']],
                 'totals' => ['debito', 'credito'],
                 'query' => fn ($f) => DB::table('ledger_lines as g')->leftJoin('accounts as a', 'a.id', '=', 'g.account_id')->where('g.company_id', $f['cid'])->whereBetween('g.date', [$f['from'], $f['to']])
                     ->when($f['doctype'], fn ($q, $v) => $q->where('g.document_type', $v))->when($f['account'], fn ($q, $v) => $q->where('g.account_code', 'like', "$v%"))
+                    ->when($f['seller'], fn ($q, $v) => $q->whereExists(fn ($w) => $w->from('sales_documents as d')->whereColumn('d.company_id', 'g.company_id')->whereColumn('d.name', 'g.document')
+                        ->where(fn ($s) => $s->where('d.seller_id', $v)->orWhereExists(fn ($i) => $i->from('sales_document_items as i')->whereColumn('i.sales_document_id', 'd.id')->where('i.seller_id', $v)))))
                     ->selectRaw("g.document documento, row_number() over (partition by g.document order by g.id) secuencia, g.date fecha, g.account_code cuenta, a.name nombre_cuenta,
-                        g.identification ident, if(coalesce(g.branch, 0) = 0, '-', g.branch) sucursal, g.contact_name tercero, '-' descripcion, '-' detalle, '-' centro, g.debit debito, g.credit credito")
+                        g.identification ident, if(coalesce(g.branch, 0) = 0, '-', g.branch) sucursal, g.contact_name tercero, ".self::sellerName('g')." vendedor, '-' descripcion, '-' detalle, '-' centro, g.debit debito, g.credit credito")
                     ->orderBy('g.document')->orderBy('g.id'),
             ],
             'flujo-efectivo' => [
@@ -1234,7 +1252,10 @@ final class ReportRegistry
                 ->leftJoin('document_types as dt', 'dt.id', '=', 'd.document_type_id')->leftJoin('cost_centers as cc', 'cc.id', '=', 'd.cost_center_id')
                 ->where('d.company_id', $f['cid'])->whereIn('d.type', $list)->where('d.status', '<>', 'annulled')->whereBetween('d.date', [$f['from'], $f['to']])
                 ->when($f['contact'], fn ($q, $v) => $q->where('d.contact_id', $v))->when($f['cost_center'], fn ($q, $v) => $q->where('d.cost_center_id', $v))
-                ->when($f['creator'], fn ($q, $v) => $q->where('d.created_by', $v));
+                ->when($f['creator'], fn ($q, $v) => $q->where('d.created_by', $v))
+                ->when($p && ($f['seller'] ?? null), fn ($q) => $q->where(fn ($w) => $w->where('d.seller_id', $f['seller'])
+                    ->orWhereExists(fn ($e) => $e->from('sales_document_items as si')->whereColumn('si.sales_document_id', 'd.id')->where('si.seller_id', $f['seller']))))
+                ->when(! $p && ($f['seller'] ?? null), fn ($q) => $q->whereRaw('1 = 0'));
             $class = 'case d.type '.implode(' ', array_map(fn ($t) => "when '$t' then '".self::MOVEMENT_LABELS[$t]."'", $list)).' end';
             $siigoType = $p ? "if(d.type = 'ND', 'DF', d.type)" : 'd.type';
             $person = "(select trim(concat(cp.first_name, ' ', coalesce(cp.last_name, ''))) from contact_people cp where cp.contact_id = c.id order by cp.id limit 1)";
@@ -1266,6 +1287,12 @@ final class ReportRegistry
 
         return DB::query()->fromSub($union, 'm')->select('m.*')
             ->orderByRaw("field(m.sort_type, 'DS', 'FC', 'FV', 'NA', 'NC', 'ND')")->orderBy('m.comprobante')->orderByDesc('m.fecha')->orderBy('m.creacion')->orderByRaw('cast(m.consecutivo as unsigned)')->orderBy('m.doc_id')->orderBy('m.orden');
+    }
+
+    /** Nombre del vendedor del comprobante de venta (encabezado o, si no tiene, el del primer ítem). */
+    private static function sellerName(string $alias): string
+    {
+        return "(select s.name from sales_documents d join sellers s on s.id = coalesce(d.seller_id, (select i.seller_id from sales_document_items i where i.sales_document_id = d.id and i.seller_id is not null order by i.position limit 1)) where d.company_id = $alias.company_id and d.name = $alias.document limit 1)";
     }
 
     /** Identificacion con digito de verificacion (12345678-9). */

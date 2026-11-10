@@ -43,9 +43,13 @@ class DocumentController extends Controller
         $doc = DocumentLocator::find($kind, $id);
         $module = DocumentLocator::module($doc);
         Gate::authorize($module.($module === 'inventario' ? '.editar' : '.anular'));
-        app(DocumentReverser::class)->annul($doc);
+        $note = app(DocumentReverser::class)->annul($doc);
+        $message = "Se anuló el documento {$doc->name}.";
+        if ($note) {
+            $message .= " La nota de ajuste {$note} quedó en Compras y gastos.";
+        }
 
-        return redirect(DocumentLocator::url($doc))->with('success', "Se anuló el documento {$doc->name}.");
+        return redirect(DocumentLocator::url($doc))->with('success', $message);
     }
 
     public function destroy(string $kind, int $id): RedirectResponse

@@ -30,7 +30,7 @@ function clear() {
 const money = (v) => Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const NEW = [['Factura de Compra / Gasto', '/compras/facturas/crear'], ['Documento soporte', '/compras/documentos-soporte/crear'], ['Orden de Compra', '/compras/ordenes/crear'],
     ['Recibo de Pago / Egreso', '/compras/egresos/crear'], ['Nota débito / Nota de ajuste', '/compras/notas-debito/crear'], ['Ajuste cartera / proveedores', '/contabilidad/ajustes-cartera/crear']];
-const TIPOS = { FC: 'Compra/Gasto', DS: 'Documento soporte', RP: 'Pagos' };
+const TIPOS = { FC: 'Compra/Gasto', DS: 'Documento soporte', NA: 'Nota de ajuste', RP: 'Pagos' };
 </script>
 
 <template>

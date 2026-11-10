@@ -205,7 +205,7 @@ class AssistController extends Controller
                 ->whereColumn('stock', '<', 'min_stock')->count();
             $add($low > 0, 'warehouse', 'warn', 'Inventario bajo el mínimo', "$low productos por debajo de su stock mínimo", '/productos?bajo_minimo=1');
             $neg = DB::table('products')->where('company_id', $c)->where('active', true)->where('stock_control', true)->where('stock', '<', 0)->count();
-            $add($neg > 0, 'triangle-exclamation', 'danger', 'Inventario negativo', "$neg productos con saldo negativo", '/productos');
+            $add($neg > 0, 'triangle-exclamation', 'danger', 'Inventario negativo', "$neg productos con saldo negativo", '/productos?saldo=negativo&estado=activos');
         }
         if ($user->can('nomina.ver')) {
             $draft = DB::table('payroll_runs')->where('company_id', $c)->where('source', 'erp')->where('status', 'draft')->count();

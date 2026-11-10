@@ -30,7 +30,7 @@ class PurchaseDocumentController extends Controller
             ->when($request->input('desde'), fn ($w, $d) => $w->whereDate('d.date', '>=', $d))
             ->when($request->input('hasta'), fn ($w, $d) => $w->whereDate('d.date', '<=', $d))
             ->when($request->input('saldo') === 'pendiente', fn ($w) => $w->where('d.balance', '>', 0))
-            ->selectRaw("d.id, 'compra' kind, if(d.type = 'DS', 'Documento soporte', 'Compra/Gasto') transaction, if(d.type = 'DS', 2, 1) ord, d.name, timestamp(d.date) date, d.created_at,
+            ->selectRaw("d.id, 'compra' kind, case d.type when 'DS' then 'Documento soporte' when 'NA' then 'Nota de ajuste' else 'Compra/Gasto' end transaction, case d.type when 'DS' then 2 when 'NA' then 4 else 1 end ord, d.name, timestamp(d.date) date, d.created_at,
                 trim(both '-' from concat(coalesce(d.supplier_prefix, ''), '-', coalesce(d.supplier_number, ''))) supplier_invoice, d.contact_id, c.name supplier,
                 c.identification, c.branch_office, if(d.type = 'DS', d.dian_status, 'No aplica') dian_status, d.status, d.total, d.currency, d.balance");
         $payments = DB::table('receipts as r')->join('contacts as c', 'c.id', '=', 'r.contact_id')->where('r.company_id', $cid)->where('r.type', 'RP')
