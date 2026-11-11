@@ -94,13 +94,17 @@ class DocumentMapper
         if (! $foreign && ! filled($supplier['postal'])) {
             // DSAJ08a: el vendedor residente exige código postal. Sin uno, la DIAN acepta 000000.
             $supplier['postal'] = '000000';
+        }                
+        $customer = $this->companyParty();
+        if (in_array($doc->type, ['DS', 'NA'], true)) {
+            $customer['id_type'] = '31';
+            $customer['dv'] = ColombianNit::verificationDigit($customer['id']);
         }
-        $d = $this->document($doc->type, $doc, $type, 'ds', $supplier, $this->companyParty(), $items, $taxes, $related, 'purchase_document_item_id');
+        $d = $this->document($doc->type, $doc, $type, 'ds', $supplier, $customer, $items, $taxes, $related, 'purchase_document_item_id');
         if ($foreign) {
             // CustomizationID 11: vendedor no residente. Con 10 la DIAN exige schemeName 31 y rechaza el 50.
             $d['customization'] = '11';
         }
-
         return $this->withholdings($d, $withholdings);
     }
 
