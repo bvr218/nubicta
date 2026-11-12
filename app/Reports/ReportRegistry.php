@@ -581,7 +581,7 @@ final class ReportRegistry
                     $code = fn ($a) => "substring_index($a.name, '-', 1)";
                     $rows = $base('sales_documents', 'd')->whereIn('d.type', ['FV', 'NC', 'ND', 'CT'])
                         ->selectRaw("{$code('d')} tipo, d.name comprobante, d.total valor, d.currency moneda, d.date fecha, date(d.created_at) creacion, {$user('d', true)} creador, {$state('d')} estado, concat('/documentos/ventas/', d.id) url")
-                        ->unionAll($base('purchase_documents', 'd')->whereIn('d.type', ['FC', 'DS', 'ND', 'NA'])
+                        ->unionAll($base('purchase_documents', 'd')->whereIn('d.type', ['FC', 'DS', 'NC', 'ND', 'NA'])
                             ->selectRaw("{$code('d')} tipo, d.name comprobante, d.total valor, d.currency moneda, d.date fecha, date(d.created_at) creacion, {$user('d')} creador, {$state('d')} estado, concat('/documentos/compras/', d.id) url"))
                         ->unionAll($base('receipts', 'd')
                             ->selectRaw("{$code('d')} tipo, d.name comprobante, d.total valor, 'COP' moneda, d.date fecha, date(d.created_at) creacion, {$user('d')} creador, {$state('d')} estado, concat('/documentos/recibos/', d.id) url"))
@@ -608,7 +608,7 @@ final class ReportRegistry
                         ->whereIn('d.type', ['FV', 'NC', 'ND'])->where('d.status', '<>', 'annulled')->whereBetween('d.date', $y))
                         ->selectRaw("$label tipo, d.name documento, c.identification ident, c.name tercero, d.date fecha, 'No contabilizado' estado, 'Ver' accion, concat('/documentos/ventas/', d.id) url")
                         ->unionAll($missing(DB::table('purchase_documents as d')->join('contacts as c', 'c.id', '=', 'd.contact_id')->where('d.company_id', $f['cid'])
-                            ->whereIn('d.type', ['FC', 'DS', 'ND', 'NA'])->where('d.status', '<>', 'annulled')->whereBetween('d.date', $y))
+                            ->whereIn('d.type', ['FC', 'DS', 'NC', 'ND', 'NA'])->where('d.status', '<>', 'annulled')->whereBetween('d.date', $y))
                             ->selectRaw("$label tipo, d.name documento, c.identification ident, c.name tercero, d.date fecha, 'No contabilizado' estado, 'Ver' accion, concat('/documentos/compras/', d.id) url"));
                 },
             ],
@@ -810,7 +810,7 @@ final class ReportRegistry
         when '21' then 'Tarjeta de extranjería' when '41' then 'Pasaporte' when '12' then 'Tarjeta de identidad' when '11' then 'Registro civil'
         when '42' then 'Documento de identificación extranjero' when '47' then 'PEP' when '50' then 'NIT de otro país' when '91' then 'NUIP' else '-' end";
 
-    private const PSIGN = "(CASE WHEN d.type IN ('ND', 'NA') THEN -1 ELSE 1 END)";
+    private const PSIGN = "(CASE WHEN d.type IN ('NC', 'NA') THEN -1 ELSE 1 END)";
 
     // ---------------- Consultas base ----------------
 
@@ -828,7 +828,7 @@ final class ReportRegistry
             ->when($f['product'] ?? null, fn ($q, $v) => $q->where('i.product_id', $v));
     }
 
-    public static function purchases(array $f, array $types = ['FC', 'DS', 'ND', 'NA']): Builder
+    public static function purchases(array $f, array $types = ['FC', 'DS', 'NC', 'ND', 'NA']): Builder
     {
         return DB::table('purchase_documents as d')->where('d.company_id', $f['cid'])->whereIn('d.type', $types)->where('d.status', '<>', 'annulled')
             ->whereBetween('d.date', [$f['from'], $f['to']])
@@ -862,7 +862,7 @@ final class ReportRegistry
         $items = $purchases ? 'purchase_document_items' : 'sales_document_items';
         $taxes = $purchases ? 'purchase_document_item_taxes' : 'sales_document_item_taxes';
         $fk = $purchases ? 'purchase_document_id' : 'sales_document_id';
-        $q = ($purchases ? self::purchases($f, ['FC', 'DS', 'ND', 'NA']) : self::sales($f))->join('contacts as c', 'c.id', '=', 'd.contact_id')
+        $q = ($purchases ? self::purchases($f, ['FC', 'DS', 'NC', 'ND', 'NA']) : self::sales($f))->join('contacts as c', 'c.id', '=', 'd.contact_id')
             ->join("$items as i", "i.$fk", '=', 'd.id')
             ->leftJoin("$taxes as t", fn ($j) => $j->on('t.'.($purchases ? 'purchase_document_item_id' : 'sales_document_item_id'), '=', 'i.id')->where('t.type', 'IVA'))
             ->groupBy(['d.id', 'd.name', 'd.date', 'd.type', 'd.number', 'c.identification', 'c.branch_office', 'c.name', ...($purchases ? ['d.supplier_prefix', 'd.supplier_number'] : [])]);
@@ -966,7 +966,7 @@ final class ReportRegistry
         $url = $purchases ? '/compras/proveedores/' : '/ventas/clientes/';
 
         $inner = DB::table(($purchases ? 'purchase_documents' : 'sales_documents').' as d')->where('d.company_id', $f['cid'])
-            ->whereIn('d.type', $purchases ? ['FC', 'DS', 'ND', 'SI', 'NA'] : ['FV', 'ND', 'SI', 'NC'])->where('d.status', '<>', 'annulled')->where('d.balance', '<>', 0)
+            ->whereIn('d.type', $purchases ? ['FC', 'DS', 'NC', 'ND', 'SI', 'NA'] : ['FV', 'ND', 'SI', 'NC'])->where('d.status', '<>', 'annulled')->where('d.balance', '<>', 0)
             ->when($f['contact'], fn ($q, $v) => $q->where('d.contact_id', $v))
             ->groupBy('d.contact_id')
             ->selectRaw("d.contact_id, {$sum("$days between 1 and 30")} d30, {$sum("$days between 31 and 60")} d60, {$sum("$days between 61 and 90")} d90,
@@ -1011,7 +1011,7 @@ final class ReportRegistry
             ->when($search, fn ($w, $v) => $w->where($match($v)), fn ($w) => $w->where('d.balance', '<>', 0))
             ->when($f['contact'], fn ($w, $v) => $w->where('d.contact_id', $v));
         [$open, $pay] = $purchases ? ['0 debito, d.total credito', 'ri.value debito, 0 credito'] : ['d.total debito, 0 credito', '0 debito, ri.value credito'];
-        [$noteOpen, $noteType] = $purchases ? ['n.total debito, 0 credito', ['NA']] : ['0 debito, n.total credito', ['NC']];
+        [$noteOpen, $noteType] = $purchases ? ['n.total debito, 0 credito', ['NC', 'NA']] : ['0 debito, n.total credito', ['NC']];
 
         $docs = $due(DB::query())->selectRaw("d.name documento, $sequence secuencia, d.date fecha, concat($ref, '-1') detalle, coalesce($creditAccount, {$account('d.name')}) cuenta, $open,
             d.name orden, d.id oid, 0 paso, concat('$docUrl', d.id) url");
@@ -1021,8 +1021,14 @@ final class ReportRegistry
                 concat($ref, '-', coalesce(ri.due_quote, 1)) detalle, coalesce(a.code, $creditAccount, {$account('r.name')}) cuenta, $pay, d.name orden, d.id oid, 1 paso, concat('/documentos/recibos/', r.id) url");
         $notes = $due(DB::query())->join("$table as n", 'n.related_document_id', '=', 'd.id')->whereIn('n.type', $noteType)->where('n.status', '<>', 'annulled')
             ->selectRaw("n.name documento, 1 secuencia, n.date fecha, concat($ref, '-1') detalle, coalesce($creditAccount, {$account('n.name')}) cuenta, $noteOpen, d.name orden, d.id oid, 2 paso, concat('$docUrl', n.id) url");
+        $movements = $docs->unionAll($receipts)->unionAll($notes);
+        if ($purchases) {
+            $debitNotes = $due(DB::query())->join("$table as n", 'n.related_document_id', '=', 'd.id')->where('n.type', 'ND')->where('n.status', '<>', 'annulled')
+                ->selectRaw("n.name documento, 1 secuencia, n.date fecha, concat($ref, '-1') detalle, coalesce($creditAccount, {$account('n.name')}) cuenta, 0 debito, n.total credito, d.name orden, d.id oid, 2 paso, concat('$docUrl', n.id) url");
+            $movements->unionAll($debitNotes);
+        }
 
-        return DB::query()->fromSub($docs->unionAll($receipts)->unionAll($notes), 'm')->orderBy('m.oid')->orderBy('m.paso')->orderBy('m.fecha');
+        return DB::query()->fromSub($movements, 'm')->orderBy('m.oid')->orderBy('m.paso')->orderBy('m.fecha');
     }
 
     /** Un renglon por documento con saldo, en los mismos rangos de vencimiento a hoy que agingByContact. */
@@ -1035,7 +1041,7 @@ final class ReportRegistry
 
         return DB::table(($purchases ? 'purchase_documents' : 'sales_documents').' as d')->join('contacts as c', 'c.id', '=', 'd.contact_id')
             ->leftJoin('cost_centers as cc', 'cc.id', '=', 'd.cost_center_id')
-            ->where('d.company_id', $f['cid'])->whereIn('d.type', $purchases ? ['FC', 'DS', 'ND', 'SI', 'NA'] : ['FV', 'ND', 'SI', 'NC'])
+            ->where('d.company_id', $f['cid'])->whereIn('d.type', $purchases ? ['FC', 'DS', 'NC', 'ND', 'SI', 'NA'] : ['FV', 'ND', 'SI', 'NC'])
             ->where('d.status', '<>', 'annulled')->where('d.balance', '<>', 0)
             ->when($f['contact'], fn ($q, $v) => $q->where('d.contact_id', $v))
             ->when($f['q'], fn ($q, $v) => $q->where(fn ($w) => $w->where('c.name', 'like', "%$v%")->orWhere('c.identification', 'like', "$v%")))
@@ -1337,7 +1343,7 @@ final class ReportRegistry
     /** Compras de Siigo: FC y DS, mas las notas (devoluciones) cuando el filtro de notas esta activo. */
     private static function purchaseTypes(array $f): array
     {
-        return $f['nc'] ? ['FC', 'DS', 'ND', 'NA'] : ['FC', 'DS'];
+        return $f['nc'] ? ['FC', 'DS', 'NC', 'ND', 'NA'] : ['FC', 'DS'];
     }
 
     private static function purchaseProductLines(array $f): Builder

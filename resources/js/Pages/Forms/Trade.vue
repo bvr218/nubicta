@@ -80,7 +80,7 @@ const currentType = computed(() => props.docTypes.find((d) => d.id === doc.docum
 const partyLabel = computed(() => (f.party === 'proveedor' ? (f.related || f.classic ? 'Proveedor' : 'Proveedores') : (['RM', 'ND'].includes(f.doc) ? 'Clientes' : 'Cliente')));
 const taxById = (id, list) => list.find((t) => t.id === id);
 
-const mandateDoc = computed(() => f.doc === 'FV' || f.doc === 'NC');
+const mandateDoc = computed(() => !f.purchase && (f.doc === 'FV' || f.doc === 'NC'));
 function lineCalc(i) {
     const gross = Number(i.quantity || 0) * Number(i.price || 0);
     const disc = percentDiscount.value ? (gross * Number(i.discount || 0)) / 100 : Number(i.discount || 0);
@@ -392,7 +392,7 @@ async function submit(action) {
             <div class="flex items-center gap-[12px]">
                 <h1 class="doc-title">{{ f.title }}</h1>
                 <label v-if="mandateDoc" class="flex items-center gap-[6px] text-[12px]"><input v-model="doc.mandate" type="checkbox" /> Facturar por mandato</label>
-                <a v-if="f.logo || f.doc === 'NC'" href="/ayuda#ventas" target="_blank" class="rounded-[2px] border border-[#ccc] px-[8px] py-[1px] text-[10px] text-primary hover:underline">Ver tutoriales</a>
+                <a v-if="f.logo || (!f.purchase && f.doc === 'NC')" href="/ayuda#ventas" target="_blank" class="rounded-[2px] border border-[#ccc] px-[8px] py-[1px] text-[10px] text-primary hover:underline">Ver tutoriales</a>
             </div>
             <div v-if="unhandledErrors.length" class="mt-[12px] rounded-[2px] border border-[#e5b6b6] bg-[#fdecec] px-[12px] py-[8px] text-[12px] text-[#c62828]" role="alert">
                 <p class="mb-[4px] font-semibold">No se pudo guardar el documento:</p>
@@ -417,7 +417,7 @@ async function submit(action) {
                                 <input v-model="doc.external_invoice.cufe" class="doc-input" placeholder="CUFE" />
                                 <input v-model="doc.external_invoice.fecha" type="date" class="doc-input w-[150px]" />
                             </div>
-                            <label v-if="f.doc === 'NC'" class="mt-[4px] flex items-center gap-[4px] text-[11px]"><input v-model="doc.use_external" type="checkbox" /> Factura de otro sistema</label>
+                            <label v-if="!f.purchase && f.doc === 'NC'" class="mt-[4px] flex items-center gap-[4px] text-[11px]"><input v-model="doc.use_external" type="checkbox" /> Factura de otro sistema</label>
                         </div>
                         <p v-if="doc.errors.related_id" class="col-start-2 text-[10px] text-danger">{{ doc.errors.related_id }}</p>
                     </div>
