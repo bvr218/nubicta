@@ -201,7 +201,8 @@ class DocumentReverser
 
         if (($doc instanceof SalesDocument || $doc instanceof PurchaseDocument) && $doc->related_document_id && (float) $doc->related_applied > 0) {
             $related = $doc::query()->lockForUpdate()->find($doc->related_document_id);
-            $related?->forceFill(['balance' => round((float) $related->balance + (float) $doc->related_applied, 2)])->save();
+            $change = $doc instanceof PurchaseDocument && $doc->type === 'ND' ? -(float) $doc->related_applied : (float) $doc->related_applied;
+            $related?->forceFill(['balance' => round((float) $related->balance + $change, 2)])->save();
         }
         if ($doc instanceof Receipt) {
             foreach ($doc->items as $item) {
@@ -352,7 +353,7 @@ class DocumentReverser
         return match (true) {
             $doc instanceof SalesDocument => ['FV' => 'ventas/facturas/crear', 'NC' => 'ventas/notas-credito/crear', 'ND' => 'ventas/notas-debito/crear',
                 'CT' => 'ventas/cotizaciones/crear', 'RM' => 'ventas/remisiones/crear'][$doc->type] ?? null,
-            $doc instanceof PurchaseDocument => ['FC' => 'compras/facturas/crear', 'DS' => 'compras/documentos-soporte/crear', 'NA' => 'compras/notas-ajuste/crear',
+            $doc instanceof PurchaseDocument => ['FC' => 'compras/facturas/crear', 'DS' => 'compras/documentos-soporte/crear', 'NC' => 'compras/notas-credito/crear', 'NA' => 'compras/notas-ajuste/crear',
                 'OC' => 'compras/ordenes/crear'][$doc->type] ?? null,
             $doc instanceof JournalEntry => $doc->source_type === null && DocumentType::query()->whereKey($doc->document_type_id)->value('type') === 'CC' ? 'contabilidad/comprobantes/crear' : null,
             $doc instanceof Receipt => $doc->type === 'RC' ? 'ventas/recibos/crear' : 'compras/egresos/crear',

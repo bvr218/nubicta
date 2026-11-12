@@ -14,7 +14,7 @@ class PurchaseDocument extends Model
 
     protected $guarded = ['id'];
 
-    public const TYPES = ['FC' => 'Factura de compra', 'DS' => 'Documento soporte', 'ND' => 'Nota débito compras', 'NA' => 'Nota ajuste documento soporte', 'SI' => 'Saldo inicial'];
+    public const TYPES = ['FC' => 'Factura de compra', 'DS' => 'Documento soporte', 'NC' => 'Nota crédito compras', 'ND' => 'Nota débito compras', 'NA' => 'Nota ajuste documento soporte', 'SI' => 'Saldo inicial'];
 
     protected function casts(): array
     {
