@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Attachment;
 use App\Models\BankAccount;
 use App\Models\CostCenter;
+use App\Models\DianInboxDocument;
 use App\Models\DocumentType;
 use App\Models\PaymentMethod;
 use App\Models\PriceList;
@@ -21,6 +22,7 @@ use App\Services\Documents\Numbering;
 use App\Services\Documents\JournalRegistrar;
 use App\Services\Documents\ReceiptRegistrar;
 use App\Services\Documents\TradeRegistrar;
+use App\Services\Purchases\PurchaseInbox;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
@@ -37,6 +39,7 @@ class DocumentFormController extends Controller
     /** Tipos de documento que Siigo no expone por API: se muestran con la numeracion que tiene Siigo. */
     public const FALLBACK_TYPES = [
         'DS' => [['code' => '1', 'name' => 'Documento soporte', 'consecutive' => 297]],
+        'NC' => [['code' => 'C1', 'name' => 'Nota crédito compras', 'consecutive' => 1]],
         'NA' => [['code' => '1', 'name' => 'Nota de ajuste documento soporte', 'consecutive' => 1]],
         'ND' => [['code' => '1', 'name' => 'Nota débito', 'consecutive' => 1]],
         'CE' => [['code' => '1', 'name' => 'Comprobante de Egreso x PC', 'consecutive' => 1]],
@@ -85,6 +88,12 @@ class DocumentFormController extends Controller
             'supplier_number' => 'No. comprobante proveedor', 'checks' => ['Descuento en porcentaje'], 'item_type' => true, 'item_taxes' => true,
             'payments' => true, 'credit_toggle' => true, 'net' => true,
             'observations' => true, 'buttons' => ['Guardar', 'Guardar y enviar'],
+        ],
+        'compras/notas-credito/crear' => [
+            'page' => 'Trade', 'perm' => 'compras.crear', 'title' => 'Nueva nota crédito de proveedor', 'doc' => 'NC', 'party' => 'proveedor',
+            'purchase' => true, 'related' => 'compras', 'related_label' => 'Factura de compra / Documento soporte',
+            'supplier_number_readonly' => true, 'checks' => ['IVA / Impoconsumo incluido', 'Proveedor por item'], 'item_type' => true,
+            'item_taxes' => true, 'payments' => true, 'credit_toggle' => true, 'observations' => true, 'buttons' => ['Guardar'],
         ],
         'compras/notas-debito/crear' => [
             'page' => 'Trade', 'perm' => 'compras.crear', 'title' => 'Nueva nota débito / Nota de ajuste Documento Soporte', 'doc' => 'NA', 'party' => 'proveedor',
@@ -152,8 +161,12 @@ class DocumentFormController extends Controller
             $initial = ['contact_id' => $bill->contact_id, 'contact_label' => $supplier ? "{$supplier->identification} - {$supplier->name}" : '', 'mode' => 'deuda',
                 'value' => (float) $bill->balance, 'items' => [['id' => $bill->id, 'pay' => (float) $bill->balance, 'balance' => (float) $bill->balance]]];
         }
-        if ($key === 'compras/facturas/crear' && ($inbox = \App\Models\DianInboxDocument::query()->where('status', 'Pendiente')->find((int) $request->input('bandeja')))) {
-            $initial = app(\App\Services\Purchases\PurchaseInbox::class)->initial($inbox);
+        if (($form = self::FORMS[$key] ?? null) && ($form['purchase'] ?? false)
+            && ($inbox = DianInboxDocument::query()->where('status', 'Pendiente')->find((int) $request->input('bandeja')))) {
+            $inboxService = app(PurchaseInbox::class);
+            if ($inbox->document_class === $form['doc'] && $inboxService->canCause($inbox)) {
+                $initial = $inboxService->initial($inbox);
+            }
         }
         if ((self::FORMS[$key]['purchase'] ?? false) && ($support = \App\Models\ExpenseSupport::query()->where('status', 'Sin causar')->find((int) $request->input('soporte')))) {
             $initial = [...($initial ?? []), 'support_id' => $support->id, 'observations' => "Soporte: {$support->name}"];
@@ -203,9 +216,9 @@ class DocumentFormController extends Controller
     }
 
     /** Marca como causada la factura de la Bandeja DIAN o el soporte por legalizar desde el que se creo la compra. */
-    private function linkPurchaseSources(Request $request, PurchaseDocument $doc): void
+    private function linkPurchaseSources(Request $request, PurchaseDocument $doc, ?DianInboxDocument $inbox = null): void
     {
-        if ($inbox = \App\Models\DianInboxDocument::query()->where('status', 'Pendiente')->find((int) $request->input('inbox_id'))) {
+        if ($inbox && $inbox->status === 'Pendiente') {
             $inbox->update(['status' => 'Causada', 'purchase_document_id' => $doc->id]);
             Attachment::copyFrom($doc, $inbox->xml_path, "{$inbox->number}.xml");
         }
@@ -238,7 +251,7 @@ class DocumentFormController extends Controller
         return Inertia::render('Forms/'.$form['page'], [
             'initial' => $initial,
             'form' => [...$form, 'url' => '/'.$key, 'back' => $this->backUrl($key), ...$override],
-            'docTypes' => isset($form['doc']) ? $this->docTypes($form['doc']) : [],
+            'docTypes' => isset($form['doc']) ? $this->docTypes($form['doc'], (bool) ($form['purchase'] ?? false)) : [],
             'paymentMethods' => $this->paymentMethods($form),
             'charges' => Tax::query()->where('active', true)->whereNotIn('type', Tax::WITHHOLDINGS)->orderBy('code')->orderBy('id')->get(['id', 'name', 'type', 'percentage', 'fixed_value']),
             'withholdings' => Tax::query()->where('active', true)->whereIn('type', Tax::WITHHOLDINGS)->orderBy('code')->orderBy('id')->get(['id', 'name', 'type', 'percentage']),
@@ -291,12 +304,31 @@ class DocumentFormController extends Controller
         $rules['attachment'] = ['nullable', 'file', 'max:10240'];
         $messages['attachment.max'] = 'El archivo adjunto no puede superar 10 MB';
         $request->validate($rules, $messages);
+        $inbox = null;
+        if ($request->filled('inbox_id')) {
+            $inbox = DianInboxDocument::query()->where('status', 'Pendiente')->find((int) $request->input('inbox_id'));
+            if (! $inbox || $inbox->document_class !== ($form['doc'] ?? null) || ! app(PurchaseInbox::class)->canCause($inbox)) {
+                throw ValidationException::withMessages(['items' => 'El documento DIAN ya fue causado o todavía no se puede causar.']);
+            }
+        }
         $this->validateLines($request, $form);
         if (isset($form['dian_reason'])) {
             $this->validateCorrection($request, $form);
         }
 
         $data = $request->all();
+        if ($inbox) {
+            $purchaseInbox = app(PurchaseInbox::class);
+            $initial = $purchaseInbox->initial($inbox);
+            $data['contact_id'] = $initial['contact_id'];
+            $data['supplier_prefix'] = $initial['supplier_prefix'];
+            $data['supplier_number'] = $initial['supplier_number'];
+            $data['related_id'] = $initial['related_id'] ?? null;
+            if (in_array($inbox->document_class, ['NC', 'ND', 'NA'], true)) {
+                $data['credit'] = true;
+                $data['payments'] = [];
+            }
+        }
         try {
             $doc = match ($form['page']) {
                 'Trade' => app(TradeRegistrar::class)->register($form, $data, self::FALLBACK_TYPES[$form['doc']] ?? []),
@@ -315,11 +347,11 @@ class DocumentFormController extends Controller
             Attachment::store($doc, $file);
         }
         if ($doc instanceof PurchaseDocument) {
-            $this->linkPurchaseSources($request, $doc);
+            $this->linkPurchaseSources($request, $doc, $inbox);
         }
 
         $message = "Se guardó el documento {$doc->name}".(isset($doc->total) ? ' por $ '.number_format((float) $doc->total, 2, ',', '.') : '').'.';
-        if (($doc instanceof SalesDocument || $doc instanceof PurchaseDocument) && DocumentType::query()->find($doc->document_type_id)?->isElectronic()) {
+        if (! $inbox && ($doc instanceof SalesDocument || $doc instanceof PurchaseDocument) && DocumentType::query()->find($doc->document_type_id)?->isElectronic()) {
             $message .= ' '.$this->emit($doc);
         }
 
@@ -461,10 +493,12 @@ class DocumentFormController extends Controller
         return '/';
     }
 
-    private function docTypes(string $type): array
+    private function docTypes(string $type, bool $purchase = false): array
     {
         $prefix = self::PREFIX[$type] ?? $type;
-        $rows = DocumentType::query()->where('type', $type)->where('active', true)->orderBy('code')->get(['id', 'code', 'name', 'consecutive', 'electronic_type'])
+        $rows = DocumentType::query()->where('type', $type)
+            ->when($type === 'NC' && $purchase, fn ($q) => $q->where('code', 'C1'))
+            ->where('active', true)->orderBy('code')->get(['id', 'code', 'name', 'consecutive', 'electronic_type'])
             ->map(fn ($d) => ['id' => $d->id, 'code' => $d->code, 'label' => in_array($type, ['CT', 'RM'], true) ? "{$prefix}-{$d->code}-{$d->name}" : "{$prefix} - {$d->code} - {$d->name}", 'consecutive' => $d->consecutive, 'electronic' => $d->electronic_type !== 'NoElectronic'])
             ->all();
 
@@ -486,7 +520,7 @@ class DocumentFormController extends Controller
     private function paymentMethods(array $form): array
     {
         $doc = match (true) {
-            in_array($form['doc'] ?? '', ['FV', 'NC', 'ND', 'CT', 'RM'], true) => 'FV',
+            in_array($form['doc'] ?? '', ['FV', 'NC', 'ND', 'CT', 'RM'], true) && empty($form['purchase']) => 'FV',
             in_array($form['page'], ['CashReceipt'], true) => 'RC',
             in_array($form['page'], ['PaymentReceipt'], true) => 'CE',
             default => 'FC',

@@ -352,12 +352,7 @@ class DianService
      */
     public function supplierInvoice(string $cufe): ?array
     {
-        $r = $this->send('GetXmlByDocumentKey', ['trackId' => $cufe], ['scope' => 'radian', 'document_kind' => 'FV', 'document_number' => mb_substr($cufe, 0, 20)]);
-        if ($r['http'] === 0 || $r['http'] >= 500) {
-            throw new DianUnavailableException("El servicio de la DIAN no está disponible (HTTP {$r['http']}). Intenta de nuevo más tarde.");
-        }
-        $encoded = $this->text($r['xml'], 'XmlBytesBase64');
-        $xml = $encoded ? base64_decode($encoded, true) : false;
+        $xml = $this->xmlByDocumentKey($cufe, 'radian');
         $xp = $xml ? $this->xpath($xml) : null;
         if (! $xp) {
             return null;
@@ -383,6 +378,34 @@ class DianService
             'date' => $q("/*/*[local-name()='IssueDate']"),
             'vat' => $q("$party/*[local-name()='PartyTaxScheme']/*[local-name()='TaxScheme']/*[local-name()='ID']") === '01',
         ];
+    }
+
+    /** Descarga y decodifica el XML UBL asociado a un CUFE/CUDE. */
+    public function xmlByDocumentKey(string $key, string $scope = 'dian_inbox'): ?string
+    {
+        $r = $this->send('GetXmlByDocumentKey', ['trackId' => $key], [
+            'scope' => $scope, 'document_kind' => 'FV', 'document_number' => mb_substr($key, 0, 20),
+        ]);
+        if ($r['http'] === 0 || $r['http'] >= 500) {
+            throw new DianUnavailableException("El servicio de la DIAN no está disponible (HTTP {$r['http']}). Intenta de nuevo más tarde.");
+        }
+        $code = $this->text($r['xml'], 'Code');
+        if ($scope === 'dian_inbox' && $code !== null && $code !== '100') {
+            throw new RuntimeException('DIAN: '.($this->text($r['xml'], 'Message') ?: 'No fue posible obtener el XML.'));
+        }
+        $encoded = $this->text($r['xml'], 'XmlBytesBase64');
+        if (! $encoded) {
+            return null;
+        }
+        $xml = base64_decode($encoded, true);
+        if ($xml === false) {
+            if ($scope === 'radian') {
+                return null;
+            }
+            throw new RuntimeException('La DIAN devolvió un XML en base64 inválido.');
+        }
+
+        return $xml;
     }
 
     /**

@@ -86,23 +86,47 @@ class PurchaseInbox
             return null;
         }
         $data = $this->parser->parse($xml);
+        if (! in_array($data['document_class'], ['FC', 'DS', 'NC', 'ND', 'NA'], true)) {
+            return null;
+        }
         if (blank($data['cufe'])) {
             throw new RuntimeException('La factura no tiene CUFE');
         }
         $companyNit = preg_replace('/\D/', '', (string) Company::query()->find(CurrentCompany::id())?->nit);
-        if ($companyNit !== '' && preg_replace('/\D/', '', $data['customer']['nit']) !== $companyNit) {
-            throw new RuntimeException("La factura {$data['number']} no está dirigida a la empresa (adquiriente {$data['customer']['nit']})");
+        if ($companyNit === '') {
+            throw new RuntimeException('Configura el NIT de la empresa antes de importar documentos DIAN.');
+        }
+        if (preg_replace('/\D/', '', $data['customer']['nit']) !== $companyNit) {
+            return null;
+        }
+        if (blank($data['supplier']['nit'])) {
+            throw new RuntimeException("El documento {$data['number']} no incluye el NIT del proveedor.");
+        }
+        if (in_array($data['document_class'], ['NC', 'ND', 'NA'], true) && blank($data['related_cufe'])) {
+            throw new RuntimeException("La nota {$data['number']} no incluye el CUFE/CUDE del documento que modifica.");
         }
         if ($existing = DianInboxDocument::query()->where('cufe', $data['cufe'])->first()) {
+            $legacyNote = in_array($data['document_class'], ['NC', 'ND', 'NA'], true) && blank($existing->related_cufe);
+            if ($existing->document_class !== $data['document_class'] || blank($existing->related_cufe) && filled($data['related_cufe'])) {
+                $existing->update([
+                    'kind' => $data['kind'], 'document_class' => $data['document_class'],
+                    'related_cufe' => $data['related_cufe'] ?: null,
+                    ...($legacyNote ? ['status' => 'Pendiente', 'purchase_document_id' => null] : []),
+                ]);
+            }
+
             return $source === 'archivo' ? $existing : null;
         }
         $path = 'dian/recibidos/'.CurrentCompany::id().'/'.Str::uuid().'.xml';
         Storage::disk('local')->put($path, $xml);
 
-        $purchase = $this->existingPurchase((string) $data['supplier']['nit'], (string) $data['number']);
+        $purchase = in_array($data['document_class'], ['FC', 'DS'], true)
+            ? $this->existingPurchase((string) $data['supplier']['nit'], (string) $data['number'])
+            : null;
 
         return DianInboxDocument::create([
-            'cufe' => $data['cufe'], 'kind' => $data['kind'], 'number' => $data['number'], 'issue_date' => $data['date'] ?: null,
+            'cufe' => $data['cufe'], 'kind' => $data['kind'], 'document_class' => $data['document_class'], 'related_cufe' => $data['related_cufe'] ?: null,
+            'number' => $data['number'], 'issue_date' => $data['date'] ?: null,
             'supplier_nit' => $data['supplier']['nit'], 'supplier_name' => $data['supplier']['name'], 'total' => $data['totals']['total'],
             'status' => $purchase ? 'Causada' : 'Pendiente', 'purchase_document_id' => $purchase, 'xml_path' => $path, 'source' => $source, 'received_from' => $from,
         ]);
@@ -118,6 +142,7 @@ class PurchaseInbox
         preg_match('/^(.*?)(\d+)$/', $number, $m);
 
         return PurchaseDocument::query()->whereIn('contact_id', $contacts)->whereIn('type', ['FC', 'DS'])
+            ->where('status', '!=', 'annulled')
             ->where(fn ($q) => $q->whereRaw("CONCAT(COALESCE(supplier_prefix, ''), supplier_number) = ?", [$number])
                 ->when($m, fn ($w) => $w->orWhere(fn ($x) => $x->where('supplier_number', ltrim($m[2], '0') ?: '0')->whereIn('supplier_prefix', [$m[1], ''])->orWhereNull('supplier_prefix')->where('supplier_number', $m[2]))))
             ->value('id');
@@ -162,26 +187,71 @@ class PurchaseInbox
             ];
         })->all();
         preg_match('/^([A-Za-z]*)(.*)$/', $data['number'], $m);
-        $credit = $data['payment_means'] === '2';
+        $isNote = in_array($doc->document_class, ['NC', 'ND', 'NA'], true);
+        $credit = $isNote || $data['payment_means'] === '2';
+        $relatedPurchase = null;
+        if ($isNote) {
+            if (! $this->canCause($doc)) {
+                throw new RuntimeException('Primero debes causar la factura o documento soporte que modifica esta nota.');
+            }
+            $relatedInbox = DianInboxDocument::query()->where('cufe', $doc->related_cufe)->firstOrFail();
+            $relatedPurchase = PurchaseDocument::query()->findOrFail($relatedInbox->purchase_document_id);
+        }
+        $purchaseType = $doc->document_class;
 
         return [
-            'inbox_id' => $doc->id, 'date' => $data['date'] ?: now()->toDateString(), 'document_type' => $this->documentType($contact->id),
+            'inbox_id' => $doc->id, 'date' => $data['date'] ?: now()->toDateString(),
+            'document_type' => $purchaseType === 'NC' ? 'NC-C1' : $this->documentType($contact->id, $purchaseType),
             'contact_id' => $contact->id, 'contact_label' => "{$contact->identification} - {$contact->name}",
+            'related_id' => $relatedPurchase?->id,
+            'related_label' => $relatedPurchase ? "{$relatedPurchase->name} - {$contact->name}" : null,
             'person_id' => ContactPerson::query()->where('contact_id', $contact->id)->orderBy('id')->value('id'),
             'supplier_prefix' => $m[1] ?? '', 'supplier_number' => $m[2] ?? $data['number'],
             'items' => $items, 'credit' => $credit, 'due_date' => $credit ? ($data['due_date'] ?: $data['date']) : null, 'payments' => [],
-            'observations' => "Factura electrónica {$data['number']} - CUFE {$data['cufe']}",
+            'observations' => "{$data['kind']} {$data['number']} - CUFE/CUDE {$data['cufe']}",
         ];
     }
 
     /** Tipo de factura de compra (Compra / Gasto) usado la ultima vez con el proveedor; si es nuevo, el primero. */
-    private function documentType(int $contactId): ?int
+    private function documentType(int $contactId, string $kind): ?int
     {
-        $active = DocumentType::query()->where('type', 'FC')->where('active', true)->orderBy('code')->pluck('id');
-        $last = PurchaseDocument::query()->where('contact_id', $contactId)->where('type', 'FC')->whereIn('document_type_id', $active)
+        $active = DocumentType::query()->where('type', $kind)->where('active', true)->orderBy('code')->pluck('id');
+        $last = PurchaseDocument::query()->where('contact_id', $contactId)->where('type', $kind)->whereIn('document_type_id', $active)
             ->latest('id')->value('document_type_id');
 
         return $last ?? $active->first();
+    }
+
+    public function canCause(DianInboxDocument $doc): bool
+    {
+        if ($doc->status !== 'Pendiente') {
+            return false;
+        }
+        if (in_array($doc->document_class, ['FC', 'DS'], true)) {
+            return true;
+        }
+        if (! in_array($doc->document_class, ['NC', 'ND', 'NA'], true) || blank($doc->related_cufe)) {
+            return false;
+        }
+        $base = DianInboxDocument::query()->where('cufe', $doc->related_cufe)->first();
+        if (! $base || $base->status !== 'Causada' || ! in_array($base->document_class, ['FC', 'DS'], true)) {
+            return false;
+        }
+
+        return PurchaseDocument::query()->whereKey($base->purchase_document_id)
+            ->whereIn('type', ['FC', 'DS'])->where('status', '!=', 'annulled')->exists();
+    }
+
+    public static function formPath(DianInboxDocument $doc): ?string
+    {
+        return match ($doc->document_class) {
+            'FC' => '/compras/facturas/crear',
+            'DS' => '/compras/documentos-soporte/crear',
+            'NC' => '/compras/notas-credito/crear',
+            'ND' => '/compras/notas-debito/crear',
+            'NA' => '/compras/notas-ajuste/crear',
+            default => null,
+        };
     }
 
     /** Valor unitario y descuento (en valor) tal como vienen en la factura, para que el subtotal cuadre con el XML. */

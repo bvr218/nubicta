@@ -3,13 +3,14 @@
 namespace Tests\Unit;
 
 use App\Services\Dian\AttachedDocumentBuilder;
+use App\Services\Dian\DocumentMapper;
 use App\Services\Dian\NominaBuilder;
+use App\Services\Dian\RadianEventBuilder;
 use App\Services\Dian\SimulatedDianTransport;
 use App\Services\Dian\SoapDianTransport;
-use App\Services\Dian\DocumentMapper;
 use App\Services\Dian\UblBuilder;
-use App\Services\Dian\RadianEventBuilder;
 use App\Services\Dian\XadesSigner;
+use App\Services\Purchases\SupplierInvoiceParser;
 use DOMDocument;
 use DOMXPath;
 use Tests\TestCase;
@@ -35,6 +36,16 @@ class DianXmlTest extends TestCase
             .'900123456'.'800199436'.'12345'.'2');
 
         $this->assertSame($expected, (new UblBuilder)->documentKey($d));
+    }
+
+    public function test_supplier_document_types_are_classified_for_purchase_inbox(): void
+    {
+        $this->assertSame('FC', SupplierInvoiceParser::documentClass('Invoice', '01'));
+        $this->assertSame('DS', SupplierInvoiceParser::documentClass('Invoice', '05'));
+        $this->assertSame('NC', SupplierInvoiceParser::documentClass('CreditNote', '91'));
+        $this->assertSame('NA', SupplierInvoiceParser::documentClass('CreditNote', '95'));
+        $this->assertSame('ND', SupplierInvoiceParser::documentClass('DebitNote', '92'));
+        $this->assertNull(SupplierInvoiceParser::documentClass('Invoice', '02'));
     }
 
     public function test_invoice_ubl_has_dian_structure(): void

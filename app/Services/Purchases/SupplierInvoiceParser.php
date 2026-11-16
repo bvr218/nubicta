@@ -57,6 +57,12 @@ class SupplierInvoiceParser
         $nit = trim((string) $company);
         $lineTag = ['Invoice' => 'InvoiceLine', 'CreditNote' => 'CreditNoteLine', 'DebitNote' => 'DebitNoteLine'][$doc->getName()];
         $qtyTag = ['Invoice' => 'InvoicedQuantity', 'CreditNote' => 'CreditedQuantity', 'DebitNote' => 'DebitedQuantity'][$doc->getName()];
+        $typeCode = match ($doc->getName()) {
+            'Invoice' => $v('/*/cbc:InvoiceTypeCode'),
+            'CreditNote' => $v('/*/cbc:CreditNoteTypeCode'),
+            'DebitNote' => $v('/*/cbc:DebitNoteTypeCode'),
+        };
+        $documentClass = self::documentClass($doc->getName(), $typeCode);
 
         $lines = [];
         foreach ($this->x($doc, "/*/cac:$lineTag") as $line) {
@@ -77,7 +83,13 @@ class SupplierInvoiceParser
         $contact = $nit !== '' ? Contact::query()->where('identification', $nit)->first(['id', 'name', 'identification']) : null;
 
         return [
-            'kind' => ['Invoice' => 'Factura electrónica', 'CreditNote' => 'Nota crédito', 'DebitNote' => 'Nota débito'][$doc->getName()],
+            'kind' => [
+                'FC' => 'Factura electrónica', 'DS' => 'Documento soporte', 'NC' => 'Nota crédito',
+                'NA' => 'Nota ajuste documento soporte', 'ND' => 'Nota débito',
+            ][$documentClass] ?? ['Invoice' => 'Factura electrónica', 'CreditNote' => 'Nota crédito', 'DebitNote' => 'Nota débito'][$doc->getName()],
+            'document_class' => $documentClass,
+            'type_code' => $typeCode,
+            'related_cufe' => $v('/*/cac:BillingReference/*/cbc:UUID'),
             'number' => $v('/*/cbc:ID'),
             'cufe' => $v('/*/cbc:UUID'),
             'date' => $v('/*/cbc:IssueDate'),
@@ -110,6 +122,18 @@ class SupplierInvoiceParser
                 'total' => (float) $v('/*/cac:LegalMonetaryTotal/cbc:PayableAmount'),
             ],
         ];
+    }
+
+    public static function documentClass(string $root, string $typeCode): ?string
+    {
+        return match ([$root, $typeCode]) {
+            ['Invoice', '01'] => 'FC',
+            ['Invoice', '05'] => 'DS',
+            ['CreditNote', '91'] => 'NC',
+            ['CreditNote', '95'] => 'NA',
+            ['DebitNote', '92'] => 'ND',
+            default => null,
+        };
     }
 
     private function load(string $content): SimpleXMLElement

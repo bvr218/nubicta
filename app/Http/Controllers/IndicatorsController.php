@@ -34,9 +34,9 @@ class IndicatorsController extends Controller
 
         $purchasesByType = fn (string $period) => $this->monthlyMulti($company, $period, fn ($from, $to) => DB::table('purchase_documents AS p')
             ->join('purchase_document_items AS i', 'i.purchase_document_id', '=', 'p.id')
-            ->where('p.company_id', $company)->whereIn('p.type', ['FC', 'DS'])->where('p.status', '!=', 'annulled')->whereBetween('p.date', [$from, $to])
+            ->where('p.company_id', $company)->whereIn('p.type', ['FC', 'DS', 'NC', 'NA'])->where('p.status', '!=', 'annulled')->whereBetween('p.date', [$from, $to])
             ->groupByRaw("DATE_FORMAT(p.date, '%Y-%m'), i.item_type")
-            ->selectRaw("DATE_FORMAT(p.date, '%Y-%m') AS m, i.item_type AS k, SUM(i.subtotal) AS v")
+            ->selectRaw("DATE_FORMAT(p.date, '%Y-%m') AS m, i.item_type AS k, SUM(CASE WHEN p.type IN ('NC', 'NA') THEN -i.subtotal ELSE i.subtotal END) AS v")
             ->get(), ['Product' => 'Productos', 'Account' => 'Gastos', 'FixedAsset' => 'Activos fijos']);
 
         $compras = $purchasesByType($periods['compras']);

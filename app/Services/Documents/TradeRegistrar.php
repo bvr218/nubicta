@@ -43,7 +43,7 @@ class TradeRegistrar
     public function register(array $form, array $data, array $fallbacks = []): SalesDocument|PurchaseDocument
     {
         $kind = $form['doc'];
-        $purchase = ! in_array($kind, self::SALES, true);
+        $purchase = (bool) ($form['purchase'] ?? ! in_array($kind, self::SALES, true));
         $this->numbering->assertOpen($data['date']);
         $type = $this->numbering->type($data['document_type'] ?? null, $kind, $fallbacks);
         $contact = Contact::query()->findOrFail($data['contact_id']);
@@ -77,7 +77,7 @@ class TradeRegistrar
             $this->saveItems($doc, $calc, $purchase, $data);
             $this->savePayments($doc, $payments, $purchase);
             $this->applyToRelated($kind, $related, $credit, $doc);
-            $costs = $this->moveInventory($kind, $doc, $calc, $data['date']);
+            $costs = $this->moveInventory($kind, $doc, $calc, $data['date'], $purchase);
 
             if (! in_array($kind, self::NO_LEDGER, true)) {
                 $this->post($kind, $doc, $contact, $calc, $payments, $costs, $purchase);
@@ -292,7 +292,11 @@ class TradeRegistrar
             'currency' => ($money = $this->money($data))[0], 'exchange_rate' => $money[1],
             'subtotal' => $calc['subtotal'], 'discount' => $calc['discount'], 'tax_total' => $calc['tax_total'],
             'withholding_total' => $calc['withholding_total'], 'total' => $calc['total'],
-            'balance' => in_array($kind, ['FC', 'DS'], true) ? $credit : 0,
+            'balance' => match ($kind) {
+                'FC', 'DS' => $credit,
+                'NC', 'NA' => $related ? -round(max($credit - max((float) $related->balance, 0), 0), 2) : 0,
+                default => 0,
+            },
             'observations' => $data['observations'] ?? null, 'status' => 'issued',
             'dian_status' => $type->isElectronic() ? 'Draft' : null, 'created_by' => Auth::id(),
         ]);
@@ -353,22 +357,24 @@ class TradeRegistrar
     /** NC y nota de ajuste de compra cruzan su parte a credito contra el saldo del documento relacionado. */
     private function applyToRelated(string $kind, ?Model $related, float $credit, Model $doc): void
     {
-        if (! $related || ! in_array($kind, ['NC', 'NA'], true) || $credit <= 0) {
+        $purchaseDebit = $doc instanceof PurchaseDocument && $kind === 'ND';
+        if (! $related || (! $purchaseDebit && ! in_array($kind, ['NC', 'NA'], true)) || $credit <= 0) {
             return;
         }
-        $applied = round(min($credit, (float) $related->balance), 2);
+        $applied = $purchaseDebit ? round($credit, 2) : round(min($credit, max((float) $related->balance, 0)), 2);
         if ($applied > 0) {
-            $related->forceFill(['balance' => round((float) $related->balance - $applied, 2)])->save();
+            $change = $purchaseDebit ? $applied : -$applied;
+            $related->forceFill(['balance' => round((float) $related->balance + $change, 2)])->save();
             $doc->forceFill(['related_applied' => $applied])->save();
         }
     }
 
     /** Mueve el kardex y devuelve el costo por linea para la contabilizacion. */
-    private function moveInventory(string $kind, Model $doc, array $calc, string $date): array
+    private function moveInventory(string $kind, Model $doc, array $calc, string $date, bool $purchase): array
     {
-        $sign = match ($kind) {
+        $sign = $kind === 'NC' ? ($purchase ? -1 : 1) : match ($kind) {
             'FV', 'RM', 'NA' => -1,
-            'NC', 'FC', 'DS' => 1,
+            'FC', 'DS' => 1,
             default => 0,
         };
         $costs = [];
