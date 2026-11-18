@@ -257,7 +257,7 @@ MD;
                 $this->q('identificacion', 'Identificación exacta (sin DV).', '900555123'), $this->q('activo', 'true o false.', null, 'boolean'), ...$this->syncParams()],
             'responses' => ['200' => $this->json($this->paged('Tercero'), ['data' => [$example], 'pagina' => 1, 'por_pagina' => 50, 'total' => 1, 'paginas' => 1])],
         ]);
-        $this->op('post', '/terceros', 'Terceros', 'Crear tercero', 'Crea un cliente, proveedor, empleado u otro. El dígito de verificación del NIT se calcula solo. Si el rol incluye `empleado`, el tercero queda disponible en Nómina con un contrato base que debes completar.', [
+        $this->op('post', '/terceros', 'Terceros', 'Crear tercero', 'Crea un cliente, proveedor, empleado u otro. El dígito de verificación del NIT y de la cédula se calcula solo. Si el rol incluye `empleado`, el tercero queda disponible en Nómina con un contrato base que debes completar.', [
             'requestBody' => $this->body('TerceroEntrada', ['tipo_persona' => 'juridica', 'tipo_identificacion' => '31', 'identificacion' => '900555123', 'razon_social' => 'Distribuciones Andina S.A.S.',
                 'correo' => 'compras@andina.example', 'telefono' => '3001234567', 'direccion' => 'Carrera 7 # 45-10', 'ciudad' => '11001', 'responsable_iva' => true, 'responsabilidades_fiscales' => ['O-13'], 'roles' => ['cliente'], 'dias_credito' => 30]),
             'responses' => ['201' => $this->json($this->ref('Tercero'), $example, 'Tercero creado'), '422' => $this->r('Validacion')],

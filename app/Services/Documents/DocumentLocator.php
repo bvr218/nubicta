@@ -10,6 +10,7 @@ use App\Models\SalesDocument;
 use App\Models\Tax;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 /** Ubica cualquier documento por /documentos/{tipo}/{id} y arma su detalle y los datos para editarlo. */
 class DocumentLocator
@@ -175,9 +176,41 @@ class DocumentLocator
                 'withholding' => (float) $doc->withholding_total, 'total' => (float) $doc->total, 'balance' => (float) $doc->balance],
             'dian' => $doc->dian_status ? ['status' => $doc->dian_status, 'simulated' => (bool) DB::table('dian_transmissions')->where('company_id', $doc->company_id)->where($sales ? 'sales_document_id' : 'purchase_document_id', $doc->id)->orderByDesc('id')->value('simulated'), 'cufe' => $sales ? $doc->cufe : ($doc->cuds ?? null), 'message' => $doc->dian_message,
                 'xml' => $doc->xml_path ? true : false, 'response' => (bool) $doc->dian_response_path, 'attached' => (bool) $doc->attached_path,
-                'qr' => $sales ? ($doc->qr_data ?: ($doc->cufe ? 'https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey='.$doc->cufe : null)) : null] : null,
+                'qr' => self::dianQr($doc, $sales)] : null,
             'printable' => true,
         ] + ($sales ? self::salesExtra($doc) : self::purchaseExtra($doc));
+    }
+
+    /** Texto del QR de la DIAN: el guardado al emitir, el que va en el XML o el enlace de consulta por CUFE/CUDS. */
+    private static function dianQr(SalesDocument|PurchaseDocument $doc, bool $sales): ?string
+    {
+        if (filled($doc->qr_data ?? null)) {
+            return $doc->qr_data;
+        }
+        if ($fromXml = self::qrFromXml($doc->xml_path ?? null)) {
+            return $fromXml;
+        }
+        $key = $sales ? ($doc->cufe ?? null) : ($doc->cuds ?? null);
+        if (blank($key)) {
+            return null;
+        }
+        $prod = DB::table('dian_settings')->where('company_id', $doc->company_id)->value('environment') === 'produccion';
+
+        return ($prod ? 'https://catalogo-vpfe.dian.gov.co' : 'https://catalogo-vpfe-hab.dian.gov.co').'/document/searchqr?documentkey='.$key;
+    }
+
+    private static function qrFromXml(?string $path): ?string
+    {
+        $disk = config('filesystems.disks.tenant') ? 'tenant' : 'local';
+        if (blank($path) || ! Storage::disk($disk)->exists($path)) {
+            return null;
+        }
+        $xml = Storage::disk($disk)->get($path);
+        if (! is_string($xml) || ! preg_match('/<(?:[\w-]+:)?QRCode>(.*?)<\/(?:[\w-]+:)?QRCode>/s', $xml, $match)) {
+            return null;
+        }
+
+        return html_entity_decode($match[1], ENT_QUOTES | ENT_XML1, 'UTF-8');
     }
 
     /** Formato para compras: datos del proveedor, valor en letras y estado de cuenta de la factura. */

@@ -13,6 +13,26 @@ final class ColombianNit
         return preg_replace('/\D+/', '', $nit) ?? '';
     }
 
+    /** NIT (31) y cédula de ciudadanía (13): el NIT de una persona natural es su cédula y usa el mismo dígito. */
+    public static function usesVerificationDigit(string $identificationType): bool
+    {
+        return in_array($identificationType, ['13', '31'], true);
+    }
+
+    /** Dígito de verificación, o null si el tipo no lo usa o el número no tiene entre 1 y 15 dígitos. */
+    public static function digitFor(string $identificationType, string $number): ?string
+    {
+        if (! self::usesVerificationDigit($identificationType)) {
+            return null;
+        }
+        $number = self::normalize($number);
+        if ($number === '' || strlen($number) > count(self::WEIGHTS)) {
+            return null;
+        }
+
+        return self::verificationDigit($number);
+    }
+
     public static function verificationDigit(string $nit): string
     {
         $number = self::normalize($nit);

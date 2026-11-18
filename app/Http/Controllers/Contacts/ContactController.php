@@ -260,8 +260,8 @@ class ContactController extends Controller
         if (! ($data['is_customer'] ?? false) && ! ($data['is_supplier'] ?? false) && ! ($data['is_employee'] ?? false) && ! ($data['is_other'] ?? false)) {
             $attrs['is_customer'] = true;
         }
-        if ($data['identification_type'] === '31' && empty($data['dv'])) {
-            $attrs['dv'] = (string) ColombianNit::verificationDigit($data['identification']);
+        if (ColombianNit::usesVerificationDigit($data['identification_type']) && ($data['dv'] ?? '') === '') {
+            $attrs['dv'] = ColombianNit::digitFor($data['identification_type'], $data['identification']);
         }
         $attrs['branch_office'] = (int) ($data['branch_office'] ?? 0);
         $attrs['credit_limit'] = $data['credit_limit'] ?? 0;

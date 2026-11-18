@@ -192,7 +192,7 @@ class DianService
             'dian_track_id' => $trackId,
             'xml_path' => "$dir/$file.xml",
             'dian_message' => mb_substr($message, 0, 500),
-            'qr_data' => $purchase ? null : $built['qr'],
+            'qr_data' => $built['qr'],
             'dian_response_path' => $responsePath,
             'attached_path' => $attachedPath,
         ], fn ($v) => $v !== null))->save();
@@ -244,7 +244,7 @@ class DianService
         $doc->forceFill(array_filter([
             'dian_status' => 'Accepted',
             'dian_message' => mb_substr($message, 0, 500),
-            'qr_data' => $purchase || filled($doc->qr_data) ? null : ((new UblBuilder)->build($data)['qr'] ?? null),
+            'qr_data' => filled($doc->qr_data) ? null : ((new UblBuilder)->build($data)['qr'] ?? null),
             'dian_response_path' => $responsePath,
             'attached_path' => $attachedPath,
         ], fn ($v) => $v !== null))->save();

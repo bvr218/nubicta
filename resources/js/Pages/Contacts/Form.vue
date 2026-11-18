@@ -1,8 +1,9 @@
 <script setup>
 import NumInput from '../../Components/Forms/NumInput.vue';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import Lookup from '../../Components/Lookup.vue';
+import { DV_TYPES, verificationDigit } from '../../colombianNit';
 
 const props = defineProps({
     contact: { type: Object, default: null },
@@ -25,7 +26,7 @@ const form = useForm({
     person_type: c.person_type ?? 'natural',
     identification_type: c.identification_type ?? '13',
     identification: c.identification ?? '',
-    dv: c.dv ?? '',
+    dv: c.dv || verificationDigit(DV_TYPES.includes(String(c.identification_type ?? '13')) ? c.identification : ''),
     branch_office: c.branch_office ?? 0,
     first_name: c.first_name ?? '',
     last_name: c.last_name ?? '',
@@ -82,10 +83,16 @@ function onCountry() {
         form.foreign_city = '';
     }
 }
-async function autocompleteDv() {
+function fillDv() {
+    if (!DV_TYPES.includes(String(form.identification_type))) return;
+    form.dv = verificationDigit(form.identification);
+}
+watch(() => form.identification, fillDv);
+watch(() => form.identification_type, fillDv);
+function autocompleteDv() {
     if (!form.identification) return;
-    const res = await fetch(`/api/terceros/dv?identificacion=${encodeURIComponent(form.identification)}`);
-    form.dv = String((await res.json()).dv ?? '');
+    const digit = verificationDigit(form.identification);
+    if (digit !== '') form.dv = digit;
 }
 function addPerson() {
     form.people.push({ first_name: '', last_name: '', email: '', phone_indicative: '', phone: '', position: '' });

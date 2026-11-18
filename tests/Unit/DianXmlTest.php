@@ -343,6 +343,17 @@ class DianXmlTest extends TestCase
         $this->assertStringNotContainsString('<cbc:PostalZone>000000</cbc:PostalZone>', $xml);
     }
 
+    public function test_support_document_qr_uses_the_same_catalog_link_as_an_invoice(): void
+    {
+        $d = $this->invoice();
+        $d['kind'] = 'DS';
+        $built = (new UblBuilder)->build($d);
+
+        $this->assertStringContainsString('CUFE='.$built['key'], $built['qr']);
+        $this->assertStringContainsString('https://catalogo-vpfe-hab.dian.gov.co/document/searchqr?documentkey='.$built['key'], $built['qr']);
+        $this->assertStringContainsString('<sts:QRCode>'.$built['qr'].'</sts:QRCode>', $built['xml']);
+    }
+
     private function invoice(): array
     {
         $party = fn (string $id, string $name) => [

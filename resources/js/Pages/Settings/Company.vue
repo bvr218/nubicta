@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+import { DV_TYPES, verificationDigit } from '../../colombianNit';
 
 const props = defineProps({
     company: { type: Object, required: true },
@@ -69,16 +70,8 @@ watch(
     },
 );
 
-const dv = computed(() => {
-    const weights = [71, 67, 59, 53, 47, 43, 41, 37, 29, 23, 19, 17, 13, 7, 3];
-    const n = (form.nit || '').replace(/\D/g, '');
-    if (!n || n.length > 15 || form.identification_type !== '31') return '';
-    const off = weights.length - n.length;
-    let sum = 0;
-    [...n].forEach((d, i) => (sum += Number(d) * weights[off + i]));
-    const r = sum % 11;
-    return String(r > 1 ? 11 - r : r);
-});
+const showsDv = computed(() => DV_TYPES.includes(String(form.identification_type)));
+const dv = computed(() => (showsDv.value ? verificationDigit(form.nit) : ''));
 
 const regimeLabel = (k, n) => `${k === '48' ? '002' : '001'} - ${n}`;
 const toggle = (list, k) => (list.includes(k) ? list.splice(list.indexOf(k), 1) : list.push(k));
@@ -141,7 +134,7 @@ function submit() {
             <div class="s-row"><span>Identificación</span>
                 <div class="flex items-center gap-4">
                     <input v-model="form.nit" class="s-input w-[180px]" :class="{ 'is-invalid': form.errors.nit }" :aria-invalid="!!form.errors.nit" inputmode="numeric" />
-                    <template v-if="form.identification_type === '31'"><span>Dígito Verificación</span><input :value="dv" class="s-input w-[46px] bg-[#e9ecef]" readonly /></template>
+                    <template v-if="showsDv"><span>Dígito Verificación</span><input :value="dv" class="s-input w-[46px] bg-[#e9ecef]" readonly /></template>
                 </div>
             </div>
             <p v-if="form.errors.nit" class="s-error ml-[310px]">{{ form.errors.nit }}</p>

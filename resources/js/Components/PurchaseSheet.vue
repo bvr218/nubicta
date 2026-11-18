@@ -1,8 +1,15 @@
 <script setup>
+import { onMounted, ref } from 'vue';
+import QRCode from 'qrcode';
+
 /* Representacion grafica de compras: factura de compra / gasto, documento soporte, notas y ordenes de compra. */
 const props = defineProps({ doc: Object, company: Object });
 const d = props.doc;
 const c = props.company ?? {};
+const qr = ref('');
+onMounted(async () => {
+    if (d.dian?.qr) qr.value = await QRCode.toDataURL(d.dian.qr, { margin: 0, width: 140 });
+});
 const money = (v) => Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const qty = (v) => Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 const rate = (v) => `${Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })} %`;
@@ -27,9 +34,12 @@ const phones = [c.phone, c.phone2].filter(Boolean).filter((p, i, a) => a.indexOf
                 <p v-if="phones.length">Tel: ({{ phones[0] }}) {{ phones.slice(1).join(' ') || phones[0] }}</p>
                 <p v-if="c.city">{{ c.city }} - Colombia</p>
             </div>
-            <div class="box">
-                <p>{{ d.type_name }}</p>
-                <p><b>No. {{ number }}</b></p>
+            <div class="sidebox">
+                <img v-if="qr" :src="qr" alt="QR DIAN" class="qr" />
+                <div class="box">
+                    <p>{{ d.type_name }}</p>
+                    <p><b>No. {{ number }}</b></p>
+                </div>
             </div>
         </header>
         <div v-if="d.status === 'annulled'" class="ribbon"><span>Anulada</span></div>
@@ -100,7 +110,9 @@ const phones = [c.phone, c.phone2].filter(Boolean).filter((p, i, a) => a.indexOf
 .logo img { max-height: 70px; max-width: 150px; object-fit: contain; margin-left: 40px; }
 .company { text-align: center; }
 .company p, .company b { display: block; margin: 0; }
-.box { justify-self: end; width: 125px; margin-top: 16px; border: 1px solid #bbb; padding: 10px 6px; text-align: center; font-size: 11px; }
+.sidebox { justify-self: end; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.qr { width: 120px; height: 120px; }
+.box { width: 125px; margin-top: 8px; border: 1px solid #bbb; padding: 10px 6px; text-align: center; font-size: 11px; }
 .box p { margin: 1px 0; }
 .ribbon { position: absolute; left: 0; top: 0; width: 90px; height: 90px; overflow: hidden; }
 .ribbon span { position: absolute; left: -34px; top: 24px; width: 140px; transform: rotate(-45deg); background: #ec407a; color: #fff; text-align: center; font-size: 11px; padding: 3px 0; box-shadow: 0 1px 2px #0003; }

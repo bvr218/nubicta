@@ -156,7 +156,7 @@ class ContactApiController extends ApiBaseController
         return array_merge($attrs, [
             'identification' => $id, 'branch_office' => $branch,
             'first_name' => $natural ? $data['nombres'] : null, 'last_name' => $natural ? $data['apellidos'] : null, 'business_name' => $natural ? null : $data['razon_social'],
-            'dv' => $data['tipo_identificacion'] === '31' ? (string) ColombianNit::verificationDigit($id) : null,
+            'dv' => ColombianNit::digitFor($data['tipo_identificacion'], $id),
             'department_code' => $country === 'CO' && ! empty($data['ciudad']) ? substr($data['ciudad'], 0, 2) : ($country === 'CO' ? $contact?->department_code : null),
             'municipality_code' => $country === 'CO' ? ($data['ciudad'] ?? $contact?->municipality_code) : null,
             'country_code' => $country, 'foreign_city' => $country === 'CO' ? null : trim((string) ($data['ciudad_extranjera'] ?? $contact?->foreign_city ?? '')),
