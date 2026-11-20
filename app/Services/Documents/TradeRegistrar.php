@@ -100,6 +100,17 @@ class TradeRegistrar
             : [round($net, 2), round($net * (1 + $rate), 2)];
     }
 
+    /**
+     * Porcentaje que pide el formulario de ventas. La línea guarda el descuento en pesos;
+     * 6 decimales alcanzan para que, al recalcular, el peso vuelva al mismo centavo.
+     */
+    public static function discountPercent(float $quantity, float $price, float $discount): float
+    {
+        $gross = $quantity * $price;
+
+        return $gross > 0 ? round($discount / $gross * 100, 6) : 0.0;
+    }
+
     /** Calculo de lineas, impuestos y retenciones (Trade.vue: lineCalc / totals). */
     public function calculate(array $data, bool $purchase): array
     {

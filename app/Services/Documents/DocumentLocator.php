@@ -409,7 +409,7 @@ class DocumentLocator
             return [
                 'type' => self::ITEM_TYPE[$type], 'item_id' => $id, 'label' => $ref ? "{$ref->code} - {$ref->name}" : (string) $i->code,
                 'description' => $i->description ?? '', 'quantity' => (float) $i->quantity, 'price' => (float) $i->price,
-                'discount' => $sales ? ($gross > 0 ? round((float) $i->discount / $gross * 100, 4) : 0) : (float) $i->discount,
+                'discount' => $sales ? TradeRegistrar::discountPercent((float) $i->quantity, (float) $i->price, (float) $i->discount) : (float) $i->discount,
                 'tax_id' => $charge?->tax_id, 'withholding_id' => $withholding?->tax_id,
             ];
         })->all();

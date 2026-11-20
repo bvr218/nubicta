@@ -67,13 +67,12 @@ class RecurringInvoiceGenerator
             'document_type' => $t->document_type_id, 'date' => $date, 'contact_id' => $t->contact_id,
             'seller_id' => $t->seller_id, 'cost_center_id' => $t->cost_center_id, 'observations' => $t->observations,
             'items' => $items->map(function ($i) use ($taxes, $withholdings) {
-                $gross = (float) $i->quantity * (float) $i->price;
                 $tx = $taxes[$i->id] ?? collect();
 
                 return [
                     'product_id' => $i->product_id, 'account_id' => $i->product_id ? null : ($i->account_id ?? null),
                     'description' => $i->description, 'quantity' => (float) $i->quantity, 'price' => (float) $i->price,
-                    'discount' => $gross > 0 ? round((float) $i->discount / $gross * 100, 6) : 0,
+                    'discount' => TradeRegistrar::discountPercent((float) $i->quantity, (float) $i->price, (float) $i->discount),
                     'tax_id' => $tx->first(fn ($x) => ! in_array($x->type, $withholdings, true))?->tax_id,
                     'withholding_id' => $tx->first(fn ($x) => in_array($x->type, $withholdings, true))?->tax_id,
                 ];

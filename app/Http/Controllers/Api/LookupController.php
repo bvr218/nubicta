@@ -12,6 +12,7 @@ use App\Models\Product;
 use App\Models\PurchaseDocument;
 use App\Models\SalesDocument;
 use App\Models\Tax;
+use App\Services\Documents\TradeRegistrar;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -128,7 +129,8 @@ class LookupController extends Controller
             'type' => $types[$i->item_type ?? 'Product'] ?? 'Producto',
             'product_id' => $i->product_id, 'account_id' => $i->account_id ?? null,
             'label' => trim(($i->code ? "{$i->code} - " : '').$i->description),
-            'description' => $i->description, 'quantity' => (float) $i->quantity, 'price' => (float) $i->price, 'discount' => (float) $i->discount,
+            'description' => $i->description, 'quantity' => (float) $i->quantity, 'price' => (float) $i->price,
+            'discount' => $purchases ? (float) $i->discount : TradeRegistrar::discountPercent((float) $i->quantity, (float) $i->price, (float) $i->discount),
             'tax_id' => $i->tax_percentage > 0 ? $taxes->first(fn ($t) => abs((float) $t->percentage - (float) $i->tax_percentage) < 0.01)?->id : null,
             'role' => $i->role ?? null, 'tax_code' => $i->tax_code ?? null, 'free' => ! $i->product_id && ! ($i->account_id ?? null),
         ]));
